@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { extractGitHubTarget } from "../convex/gateway";
 import { AdapterRegistry } from "../src/control/adapter-registry";
 import { CanonicalEventFeed } from "../src/control/event-feed";
 import { TaskQueue } from "../src/control/task-queue";
@@ -8,6 +9,13 @@ import { newId } from "../packages/contracts/src/ids";
 import { claimedTask, SHA256, task, trace } from "./fixtures";
 
 describe("canonical control-plane primitives", () => {
+  test("extracts an allowlisted repository URL embedded in an operator prompt", () => {
+    const prompt = "Review and improve the website in https://github.com/TarunRam-git/helios-Tarun. Inspect the existing code.";
+    expect(extractGitHubTarget(prompt)).toEqual({
+      repo: "TarunRam-git/helios-Tarun",
+      sourceUrl: "https://github.com/TarunRam-git/helios-Tarun",
+    });
+  });
   test("task enqueue is repository-scoped and exactly once", () => { const queue = new TaskQueue(); const first = queue.enqueue(task()); const second = queue.enqueue(task({ taskId: newId("task") })); expect(first.duplicate).toBeFalse(); expect(second.duplicate).toBeTrue(); });
   test("same dedupe key is independent across repositories", () => { const queue = new TaskQueue(); queue.enqueue(task()); const other = task({ taskId: newId("task"), repo: "other/project", consentScope: { ...task().consentScope, repo: "other/project" } }); expect(queue.enqueue(other).duplicate).toBeFalse(); });
   test("only one runtime claims a task", () => { const queue = new TaskQueue(); queue.enqueue(task()); expect(queue.claim("runtime-a", 60_000, 2_000)).not.toBeNull(); expect(queue.claim("runtime-b", 60_000, 2_001)).toBeNull(); });

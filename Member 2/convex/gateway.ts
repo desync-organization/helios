@@ -3,20 +3,29 @@ import { v } from "convex/values";
 
 const GITHUB_URL = /^https:\/\/github\.com\/([A-Za-z0-9_.-]{1,100})\/([A-Za-z0-9_.-]{1,100})(?:\/(issues|pull)\/(\d+))?\/?(?:[?#].*)?$/;
 
+export function extractGitHubTarget(prompt: string): { repo: string; itemKind?: string; itemNumber?: number; sourceUrl: string } | null {
+  const candidate = prompt.match(/https:\/\/github\.com\/[^\s]+/)?.[0]?.replace(/[),.;:!?\]}]+$/, "");
+  const match = candidate?.match(GITHUB_URL);
+  if (!candidate || !match) return null;
+  return {
+    repo: `${match[1]}/${match[2]}`,
+    sourceUrl: candidate,
+    ...(match[3] ? { itemKind: match[3] } : {}),
+    ...(match[4] ? { itemNumber: Number(match[4]) } : {}),
+  };
+}
+
 export const createTaskDraft = internalMutation({
   args: { draft: v.any(), idempotencyKey: v.string(), taskId: v.string(), now: v.number() },
   handler: async (ctx, args) => {
     const prompt = String(args.draft.prompt ?? "").trim();
-    const match = prompt.match(GITHUB_URL) ?? prompt.match(/https:\/\/github\.com\/([A-Za-z0-9_.-]{1,100})\/([A-Za-z0-9_.-]{1,100})(?:\/(issues|pull)\/(\d+))/);
-    if (!match) return { ok: false, reason: "GITHUB_URL_REQUIRED" };
-    const repo = `${match[1]}/${match[2]}`;
+    const target = extractGitHubTarget(prompt);
+    if (!target) return { ok: false, reason: "GITHUB_URL_REQUIRED" };
+    const { repo, itemKind, itemNumber, sourceUrl } = target;
     const repository = await ctx.db.query("repositories").withIndex("by_repo", (q) => q.eq("repo", repo)).unique();
     if (!repository || repository.health !== "healthy") return { ok: false, reason: "REPOSITORY_NOT_ALLOWLISTED" };
     const existing = await ctx.db.query("tasks").withIndex("by_repo_dedupe", (q) => q.eq("repo", repo).eq("dedupeKey", `operator:${args.idempotencyKey}`)).unique();
     if (existing) return { ok: true, duplicate: true, taskId: existing.taskId };
-    const itemKind = match[3];
-    const itemNumber = match[4] ? Number(match[4]) : undefined;
-    const sourceUrl = match[0];
     const expiresAt = args.now + 24 * 60 * 60 * 1000;
     await ctx.db.insert("tasks", {
       taskId: args.taskId,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from hermes_gateway.app import create_app
+from hermes_gateway.app import _repository_scoped_prompt, create_app
 from hermes_gateway.config import GatewayConfig
 from hermes_gateway.control_plane import FakeControlPlane
 from hermes_gateway.models import CanonicalEvent
@@ -61,6 +61,15 @@ def test_authenticated_prompt_is_created_once() -> None:
     draft, _ = control_plane.created[0]
     assert draft.requested_actions == []
     assert draft.requires_policy_confirmation is True
+
+
+def test_plain_prompt_is_scoped_to_the_configured_demo_repository() -> None:
+    assert _repository_scoped_prompt(
+        "Build a website",
+        "https://github.com/TarunRam-git/helios-Tarun",
+    ) == "Build a website\n\nRepository: https://github.com/TarunRam-git/helios-Tarun"
+    explicit = "Review https://github.com/example/project/pull/1"
+    assert _repository_scoped_prompt(explicit, "https://github.com/other/repo") == explicit
 
 
 def test_unauthenticated_connection_is_rejected() -> None:

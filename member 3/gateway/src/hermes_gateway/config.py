@@ -17,6 +17,7 @@ class GatewayConfig:
     upstream_token: str | None
     client_token: str | None
     allow_readonly_demo: bool
+    default_repository_url: str | None = None
     max_message_bytes: int = 16_384
     max_prompt_chars: int = 8_192
     requests_per_minute: int = 12
@@ -32,4 +33,5 @@ class GatewayConfig:
             upstream_token=os.getenv("HERMES_GATEWAY_UPSTREAM_TOKEN"),
             client_token=os.getenv("HERMES_GATEWAY_CLIENT_TOKEN"),
             allow_readonly_demo=_bool("HERMES_ALLOW_READONLY_DEMO"),
+            default_repository_url=os.getenv("HERMES_DEFAULT_REPOSITORY_URL"),
         )

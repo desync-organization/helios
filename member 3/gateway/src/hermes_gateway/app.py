@@ -43,6 +43,12 @@ def _client_key(websocket: WebSocket, principal: str | None) -> str:
     return hashlib.sha256(f"{principal or 'readonly'}\0{host}".encode()).hexdigest()[:16]
 
 
+def _repository_scoped_prompt(prompt: str, default_repository_url: str | None) -> str:
+    if "https://github.com/" in prompt or not default_repository_url:
+        return prompt
+    return f"{prompt}\n\nRepository: {default_repository_url}"
+
+
 def create_app(
     config: GatewayConfig | None = None,
     control_plane: ControlPlane | None = None,
@@ -176,7 +182,7 @@ def create_app(
                     )
                     continue
                 draft = TaskDraft(
-                    prompt=prompt,
+                    prompt=_repository_scoped_prompt(prompt, settings.default_repository_url),
                     clientMessageId=message_id,
                     createdAt=datetime.now(UTC),
                 )
