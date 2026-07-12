@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1.0",
+  "taskId": "task_fixture_1",
+  "mode": "maintain",
+  "taskType": "classify",
+  "repository": "owner/repo",
+  "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "policyVersion": "p1",
+  "title": "Bug: fixture",
+  "body": "An endpoint fails.",
+  "source": "github",
+  "visibility": "public",
+  "consent": {
+    "repositoryAllowlisted": true,
+    "securityAuditOptIn": false,
+    "remediationPermitted": false,
+    "networkPermitted": false,
+    "deploymentPermitted": false,
+    "allowedScanners": [],
+    "allowedPaths": ["."],
+    "excludedPaths": [".git", "node_modules"],
+    "maxRuntimeS": 600
+  },
+  "memoryPack": {},
+  "policyPack": {},
+  "metadata": {},
+  "createdAt": "2026-07-12T00:00:00Z"
+}
+

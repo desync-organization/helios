@@ -1,0 +1,14 @@
+schemaVersion: "1.0"
+agents:
+  - {name: planner, model: qwen3-8b-q4, tools: [], maxTokens: 3000, maxSeconds: 30}
+  - {name: critic, model: qwen3-8b-q4, tools: [], maxTokens: 2000, maxSeconds: 30, independent: true}
+  - {name: triage, model: qwen3-4b-q4, tools: [], maxTokens: 1200, maxSeconds: 20}
+  - {name: dedupe, model: qwen3-4b-q4+bge-small, tools: [repo:read], maxTokens: 1200, maxSeconds: 20}
+  - {name: web-typescript, model: qwen2.5-coder-7b-q4, tools: [repo:read, workspace:write], maxTokens: 8000, maxSeconds: 180}
+  - {name: backend, model: qwen2.5-coder-7b-q4, tools: [repo:read, workspace:write], maxTokens: 8000, maxSeconds: 180}
+  - {name: test, model: qwen2.5-coder-7b-q4, tools: [command:test], maxTokens: 4000, maxSeconds: 180}
+  - {name: docs, model: qwen3-4b-q4, tools: [repo:read, workspace:write], maxTokens: 4000, maxSeconds: 120}
+  - {name: debug, model: qwen2.5-coder-7b-q4, tools: [repo:read, command:test], maxTokens: 6000, maxSeconds: 180}
+  - {name: security, model: qwen3-4b-q4, tools: [repo:read, scanner:local], maxTokens: 4000, maxSeconds: 300}
+  - {name: research, model: qwen3-4b-q4, tools: [research:proxy], maxTokens: 2000, maxSeconds: 60}
+

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "event_fixture_1",
+  "type": "run_finished",
+  "source": "helios-runtime",
+  "timestamp": "2026-07-12T00:00:00Z",
+  "sequence": 10,
+  "taskId": "task_fixture_1",
+  "runId": "run_fixture_1",
+  "spanId": null,
+  "payload": {"status": "completed", "resultUrls": []},
+  "redactionLevel": "internal"
+}
+
