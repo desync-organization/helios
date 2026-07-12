@@ -237,7 +237,7 @@ belong in approved object storage/workspace; Convex stores verified references a
 
 ### `agents` and `adapters`
 
-Keep all agent versions and origins (`kickoff`, `spawned`, `role_builder`). Keep adapter identity,
+Keep all agent versions and origins (`kickoff`, `spawned`, `operator_created`). Keep adapter identity,
 base-model hashes, training run, dataset manifest, eval report, promotion status, active roles and
 rollback predecessor. A single transaction changes an active adapter pointer.
 
