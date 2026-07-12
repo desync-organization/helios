@@ -17,9 +17,9 @@ interface AuthState {
   vercelToken: string | null;
   isVercelConnected: boolean;
 
-  /* GitHub PAT */
-  githubToken: string | null;
+  /* GitHub App */
   isGithubConnected: boolean;
+  githubInstallUrl: string | null;
 
   /* Loading / error */
   isLoading: boolean;
@@ -28,8 +28,6 @@ interface AuthState {
   /* Actions */
   setVercelAuth: (user: VercelUser, token: string) => void;
   clearVercelAuth: () => void;
-  setGithubToken: (token: string) => void;
-  clearGithubToken: () => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   hydrateFromServer: () => Promise<void>;
@@ -44,8 +42,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   vercelToken: null,
   isVercelConnected: false,
 
-  githubToken: null,
   isGithubConnected: false,
+  githubInstallUrl: null,
 
   isLoading: false,
   error: null,
@@ -65,19 +63,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       isVercelConnected: false,
     }),
 
-  setGithubToken: (token) =>
-    set({
-      githubToken: token,
-      isGithubConnected: true,
-      error: null,
-    }),
-
-  clearGithubToken: () =>
-    set({
-      githubToken: null,
-      isGithubConnected: false,
-    }),
-
   setLoading: (loading) => set({ isLoading: loading }),
 
   setError: (error) => set({ error }),
@@ -95,6 +80,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         isVercelConnected: data.vercelConnected ?? false,
         vercelUser: data.vercelUser ?? null,
         isGithubConnected: data.githubConnected ?? false,
+        githubInstallUrl: data.githubInstallUrl ?? null,
       });
     } catch {
       /* silent – dev server may not be running */

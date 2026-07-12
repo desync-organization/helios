@@ -54,18 +54,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     isVercelConnected,
     vercelUser,
     isGithubConnected,
-    setGithubToken,
-    clearGithubToken,
+    githubInstallUrl,
     clearVercelAuth,
     setVercelAuth,
     hydrateFromServer,
   } = useAuthStore();
-
-  const [githubInput, setGithubInput] = useState("");
-  const [showGithubToken, setShowGithubToken] = useState(false);
-  const [githubLoading, setGithubLoading] = useState(false);
-  const [githubError, setGithubError] = useState<string | null>(null);
-  const [githubSuccess, setGithubSuccess] = useState<string | null>(null);
 
   const [vercelInput, setVercelInput] = useState("");
   const [showVercelToken, setShowVercelToken] = useState(false);
@@ -73,9 +66,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [vercelError, setVercelError] = useState<string | null>(null);
   const [vercelSuccess, setVercelSuccess] = useState<string | null>(null);
 
-  const [disconnecting, setDisconnecting] = useState<
-    "vercel" | "github" | null
-  >(null);
+  const [disconnecting, setDisconnecting] = useState<"vercel" | null>(null);
 
   // Hydrate auth state when the dialog opens
   useEffect(() => {
@@ -83,54 +74,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       hydrateFromServer();
     }
   }, [open, hydrateFromServer]);
-
-
-
-  /* ---- GitHub PAT ---- */
-
-  const handleSaveGithubToken = async () => {
-    if (!githubInput.trim()) return;
-
-    setGithubLoading(true);
-    setGithubError(null);
-    setGithubSuccess(null);
-
-    try {
-      const res = await fetch("/api/auth/github", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: githubInput.trim() }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setGithubError(data.error || "Failed to save token.");
-        return;
-      }
-
-      setGithubToken(githubInput.trim());
-      setGithubSuccess(`Connected as ${data.username}`);
-      setGithubInput("");
-    } catch {
-      setGithubError("Network error — is the dev server running?");
-    } finally {
-      setGithubLoading(false);
-    }
-  };
-
-  const handleDisconnectGithub = async () => {
-    setDisconnecting("github");
-    try {
-      await fetch("/api/auth/github", { method: "DELETE" });
-      clearGithubToken();
-      setGithubSuccess(null);
-    } catch {
-      /* ignore */
-    } finally {
-      setDisconnecting(null);
-    }
-  };
 
   /* ---- Vercel PAT ---- */
 
@@ -328,108 +271,36 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {isGithubConnected ? (
               <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
                 <div className="flex flex-col">
-                  <span className="text-sm font-medium">
-                    Personal Access Token
-                  </span>
+                  <span className="text-sm font-medium">Hermes GitHub App</span>
                   <span className="text-xs text-muted-foreground">
-                    {githubSuccess ?? "Token saved securely"}
+                    Repository installation is active
                   </span>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleDisconnectGithub}
-                  disabled={disconnecting === "github"}
-                  className="text-muted-foreground hover:text-destructive"
-                >
-                  {disconnecting === "github" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Unplug className="h-4 w-4" />
-                  )}
-                </Button>
+                {githubInstallUrl && (
+                  <Button variant="ghost" size="sm" asChild>
+                    <a href={githubInstallUrl} target="_blank" rel="noopener noreferrer" aria-label="Manage GitHub App installation">
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
+                )}
               </div>
             ) : (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="github-token" className="text-xs">
-                    Personal Access Token (classic)
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      id="github-token"
-                      type={showGithubToken ? "text" : "password"}
-                      placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                      value={githubInput}
-                      onChange={(e) => {
-                        setGithubInput(e.target.value);
-                        setGithubError(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleSaveGithubToken();
-                      }}
-                      className="pr-10 font-mono text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowGithubToken(!showGithubToken)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {showGithubToken ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Error / success messages */}
-                <AnimatePresence mode="wait">
-                  {githubError && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                      className="flex items-center gap-1.5 text-xs text-destructive"
-                    >
-                      <XCircle className="h-3.5 w-3.5 shrink-0" />
-                      {githubError}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <Button
-                  onClick={handleSaveGithubToken}
-                  disabled={githubLoading || !githubInput.trim()}
-                  className="w-full gap-2"
-                  variant="secondary"
-                >
-                  {githubLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
+              <Button className="w-full gap-2" variant="secondary" asChild={Boolean(githubInstallUrl)} disabled={!githubInstallUrl}>
+                {githubInstallUrl ? (
+                  <a href={githubInstallUrl} target="_blank" rel="noopener noreferrer">
                     <Github className="h-4 w-4" />
-                  )}
-                  Save Token
-                </Button>
-              </>
+                    Install GitHub App
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                ) : (
+                  <span><Github className="mr-2 inline h-4 w-4" />GitHub App URL not configured</span>
+                )}
+              </Button>
             )}
 
             <p className="text-xs text-muted-foreground">
-              Requires{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
-                repo
-              </code>{" "}
-              scope.{" "}
-              <a
-                href="https://github.com/settings/tokens/new?scopes=repo&description=Helios"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-0.5 text-primary hover:underline"
-              >
-                Create one
-                <ExternalLink className="h-3 w-3" />
-              </a>
+              Install on selected repositories. Credentials remain in the server-side
+              write-back service and are never sent to this browser.
             </p>
           </section>
         </div>

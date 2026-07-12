@@ -349,7 +349,7 @@ export function ChatPage() {
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleUserSend()}
-              placeholder="Tell Helios what to build..."
+              placeholder="Paste an allowlisted GitHub issue or PR URL..."
               className="flex-1"
             />
             <Button onClick={handleUserSend} size="icon">

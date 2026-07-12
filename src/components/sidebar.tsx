@@ -96,14 +96,14 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
                       exit={{ opacity: 0, width: 0 }}
                       className="ml-2 overflow-hidden whitespace-nowrap"
                     >
-                      New Company
+                      New Task
                     </motion.span>
                   )}
                 </AnimatePresence>
               </Button>
             </TooltipTrigger>
             {collapsed && (
-              <TooltipContent side="right">New Company</TooltipContent>
+              <TooltipContent side="right">New Task</TooltipContent>
             )}
           </Tooltip>
         </div>

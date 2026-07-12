@@ -11,5 +11,5 @@ export async function DELETE() {
 }
 
 export async function GET() {
-  return NextResponse.json({ connected: Boolean(process.env.GITHUB_APP_ID && process.env.GITHUB_APP_INSTALLATION_CONFIGURED), credentialType: "github_app", browserTokenAccepted: false });
+  return NextResponse.json({ connected: Boolean(process.env.GITHUB_APP_ID && process.env.GITHUB_APP_INSTALLATION_CONFIGURED), credentialType: "github_app", installUrl: process.env.GITHUB_APP_INSTALL_URL ?? null, browserTokenAccepted: false });
 }
