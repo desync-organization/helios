@@ -23,7 +23,7 @@ export class GitHubAppClient implements GitHubExecutor {
   }
 
   private async request<T>(path: string, options: { method?: string; token: string; body?: unknown }): Promise<GitHubResponse<T>> {
-    const response = await this.fetcher(`${this.apiBaseUrl}${path}`, {
+    const response = await this.fetcher.call(globalThis, `${this.apiBaseUrl}${path}`, {
       method: options.method ?? "GET",
       headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${options.token}`, "Content-Type": "application/json", "User-Agent": this.config.userAgent ?? "Hermes-Control-Plane/2.0", "X-GitHub-Api-Version": "2022-11-28" },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
