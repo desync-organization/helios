@@ -13,4 +13,3 @@ execution.
   report. Remediation is a separate permissioned task with tests and rescan.
 
 Never treat a local patch, dry run, fixture, generated response, or queue receipt as completion.
-

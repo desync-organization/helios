@@ -63,4 +63,3 @@ def scan_value(value: Any) -> list[Finding]:
     if isinstance(value, list):
         return [finding for item in value for finding in scan_value(item)]
     return []
-

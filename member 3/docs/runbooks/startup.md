@@ -9,4 +9,3 @@
    root frontend with `bun dev`.
 
 If the control plane is absent, health is `degraded` and prompt creation fails safely.
-

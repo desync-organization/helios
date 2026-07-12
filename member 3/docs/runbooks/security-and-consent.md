@@ -8,4 +8,3 @@ separately with authoritative advisory timestamps.
 
 Remediation requires separate approval, minimal changes, tests, rescan, before/after findings, and a
 private PR intent. A read-only run must perform zero mutation.
-

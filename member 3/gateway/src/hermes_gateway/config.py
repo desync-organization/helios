@@ -33,4 +33,3 @@ class GatewayConfig:
             client_token=os.getenv("HERMES_GATEWAY_CLIENT_TOKEN"),
             allow_readonly_demo=_bool("HERMES_ALLOW_READONLY_DEMO"),
         )
-

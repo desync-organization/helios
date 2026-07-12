@@ -130,4 +130,3 @@ def write_promotion_pointer(
             "evidence": evidence.model_dump(mode="json", by_alias=True),
         },
     )
-

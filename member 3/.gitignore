@@ -15,4 +15,3 @@ adapters/**/*.safetensors
 adapters/**/*.gguf
 evals/reports/*.json
 benchmarks/reports/*.json
-

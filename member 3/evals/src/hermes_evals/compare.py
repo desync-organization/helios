@@ -33,4 +33,3 @@ def compare_reports(baseline: SuiteReport, candidate: SuiteReport) -> Regression
             - baseline.total_cloud_equivalent_cost_usd
         ),
     )
-

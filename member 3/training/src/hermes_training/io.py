@@ -45,4 +45,3 @@ def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
         stream.flush()
         os.fsync(stream.fileno())
     temporary.replace(path)
-

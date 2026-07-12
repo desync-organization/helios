@@ -19,4 +19,3 @@ unit row means the local failure behavior is tested, not that the external depen
 
 Do not mark a merged-proof column complete until the evidence index contains exact IDs, versions,
 timestamps, and real URLs where applicable.
-

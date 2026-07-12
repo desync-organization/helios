@@ -36,4 +36,3 @@ training:
   seed: 3407
   packing: false
   assistant_only_loss: true
-

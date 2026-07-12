@@ -32,4 +32,3 @@ def verify_checksums(root: Path) -> dict[str, str]:
 
 def write_run_status(root: Path, *, status: str, details: dict[str, Any]) -> None:
     write_json_atomic(root / "status.json", {"status": status, **details})
-

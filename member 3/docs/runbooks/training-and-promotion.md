@@ -9,4 +9,3 @@ Never train from GGUF. Train the compatible Hugging Face base, retain PEFT separ
 official llama.cpp `convert_lora_to_gguf.py`. If the adapter loses, keep the base active and preserve the
 negative result. Rollback changes only Member 2's atomic active pointer to the verified predecessor;
 Member 1 must demonstrate loader compatibility before live use.
-

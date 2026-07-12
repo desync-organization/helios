@@ -6,4 +6,3 @@ safety, compatibility, performance, three-run stability, activation, and rollbac
 
 `promoted/active.json` is written only after Members 1 and 2 provide loader and atomic-registry evidence.
 The independent Critic must never use the producer's adapter.
-

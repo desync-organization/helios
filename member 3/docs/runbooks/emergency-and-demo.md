@@ -8,4 +8,3 @@ For judging, stop training, warm the selected verified models, confirm rollback,
 and open only reachable frontend surfaces plus real result URLs. Keep a labelled fallback replay for
 network failure, but never count it as live completion. Record two timed rehearsals in
 `evidence/rehearsal-log.md`.
-

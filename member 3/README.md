@@ -18,4 +18,3 @@ python -m venv .venv
 Install the optional `training` dependency group only on a compatible training machine. Large model
 weights, checkpoints, generated reports, and adapters stay outside Git; checked manifests and hashes
 remain reviewable. This repository never treats fixtures, dry runs, or rehearsals as live completion.
-

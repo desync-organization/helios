@@ -61,4 +61,3 @@ class EventHub:
                 failed.append(connection)
         for connection in failed:
             self.remove(connection)
-

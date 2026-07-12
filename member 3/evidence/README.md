@@ -10,4 +10,3 @@ python evidence/validate_index.py evidence/index.json
 
 Fixtures, rehearsals, and fallback replays must retain their `dataClass` and set
 `countsAsCompletion: false`. Redact private content and raw findings before capture.
-

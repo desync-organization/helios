@@ -85,4 +85,3 @@ class DatasetManifest(StrictModel):
     gauntlet_case_hashes: list[str] = Field(default_factory=list, alias="gauntletCaseHashes")
     config_sha256: str = Field(alias="configSha256", pattern=r"^[a-f0-9]{64}$")
     manifest_sha256: str = Field(alias="manifestSha256", pattern=r"^[a-f0-9]{64}$")
-

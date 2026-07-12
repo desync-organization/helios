@@ -45,4 +45,3 @@ def load_dataset_config(path: Path) -> tuple[DatasetConfig, bytes]:
 
 def resolve_workspace_path(workspace: Path, configured: Path) -> Path:
     return configured if configured.is_absolute() else workspace / configured
-

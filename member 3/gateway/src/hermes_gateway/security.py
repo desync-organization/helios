@@ -40,4 +40,3 @@ def redact(value: Any) -> Any:
             redacted = pattern.sub("[REDACTED]", redacted)
         return redacted
     return value
-

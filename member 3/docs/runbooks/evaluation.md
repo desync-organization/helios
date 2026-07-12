@@ -7,4 +7,3 @@ mismatch, or threshold regression returns a failing process status.
 
 Reports keep actual local/provider cost separate from cloud-equivalent estimates. Any dataset, prompt,
 policy, adapter, model, or case-set change invalidates final runs and requires three reruns.
-

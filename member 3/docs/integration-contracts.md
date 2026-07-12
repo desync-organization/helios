@@ -9,4 +9,3 @@ Proposed gateway endpoints are `POST /gateway/task-drafts`, `GET /gateway/events
 `GET /gateway/status`. Freeze their JSON fixtures with both consumers before integration. The gateway
 never receives GitHub/provider credentials, maintains task truth, or turns a client prompt into live
 permission. Contract changes require exact JSON, version impact, and coordinated tests before merge.
-

@@ -43,4 +43,3 @@ def test_model_output_cannot_become_label_without_human_target() -> None:
 def test_unredacted_candidate_is_blocked() -> None:
     with pytest.raises(ValidationError, match="redacted"):
         CurationCandidate.model_validate(candidate(contentRedacted=False))
-
