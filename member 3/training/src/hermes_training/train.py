@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -60,15 +61,17 @@ def run_training(config_path: Path, *, workspace: Path) -> Path:
     write_run_status(run_root, status="running", details={"startedAt": started_at.isoformat()})
     try:
         import torch  # type: ignore[import-not-found]
-        from datasets import Dataset  # type: ignore[import-not-found]
         from peft import LoraConfig  # type: ignore[import-not-found]
         from transformers import BitsAndBytesConfig  # type: ignore[import-not-found]
         from trl import SFTConfig, SFTTrainer  # type: ignore[import-not-found]
 
+        dataset_type = importlib.import_module("datasets").Dataset
         formatted = _load_formatted_records(checked["manifest"], workspace=workspace)
-        train_dataset = Dataset.from_list([item for item in formatted if item["split"] == "train"])
+        train_dataset = dataset_type.from_list(
+            [item for item in formatted if item["split"] == "train"]
+        )
         dev_items = [item for item in formatted if item["split"] == "dev"]
-        eval_dataset = Dataset.from_list(dev_items) if dev_items else None
+        eval_dataset = dataset_type.from_list(dev_items) if dev_items else None
         dtype = torch.bfloat16 if config.compute_dtype == "bf16" else torch.float16
         quantization = None
         if config.method == "qlora":

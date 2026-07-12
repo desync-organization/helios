@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "items": [
+    {
+      "evidenceId": "fixture-gateway-contract",
+      "title": "Gateway contract test fixture",
+      "dataClass": "fixture",
+      "capturedAt": "2026-07-12T00:00:00Z",
+      "commitSha": "0000000",
+      "taskId": null,
+      "runId": null,
+      "resultUrls": [],
+      "artifactPaths": ["gateway/tests/test_gateway.py"],
+      "versions": {"gateway": "0.1.0"},
+      "demonstrates": "Example structure only; this is not live evidence.",
+      "countsAsCompletion": false
+    }
+  ]
+}
+

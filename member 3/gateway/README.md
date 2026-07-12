@@ -11,9 +11,8 @@ $env:HERMES_GATEWAY_CLIENT_TOKEN = "short-lived-local-client-token"
 python -m hermes_gateway
 ```
 
-Use `ws://localhost:9100/ws?token=...` for task creation. An explicitly enabled unauthenticated demo
+Use `ws://localhost:9100/ws?ticket=...` for task creation. An explicitly enabled unauthenticated demo
 connection (`HERMES_ALLOW_READONLY_DEMO=true`) is read-only and receives redacted events only. `/status`
 exposes wrapper status but reports that the frozen client does not consume it. The proposed Member 2
 adapter endpoints are `POST /gateway/task-drafts`, `GET /gateway/events?after=...`, and
 `GET /gateway/status`; coordinate these contracts before integration.
-

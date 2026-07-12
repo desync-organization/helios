@@ -38,9 +38,9 @@ def _parse_prompt(value: dict[str, Any], max_chars: int) -> str:
     return prompt.strip()
 
 
-def _client_key(websocket: WebSocket) -> str:
+def _client_key(websocket: WebSocket, principal: str | None) -> str:
     host = websocket.client.host if websocket.client else "unknown"
-    return hashlib.sha256(host.encode()).hexdigest()[:16]
+    return hashlib.sha256(f"{principal or 'readonly'}\0{host}".encode()).hexdigest()[:16]
 
 
 def create_app(
@@ -112,7 +112,7 @@ def create_app(
     @app.websocket("/")
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
-        supplied = websocket.query_params.get("token")
+        supplied = websocket.query_params.get("ticket") or websocket.query_params.get("token")
         can_create = authenticated(supplied, settings.client_token)
         if not can_create and not settings.allow_readonly_demo:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -156,7 +156,7 @@ def create_app(
                 if connection.read_only:
                     await websocket.send_json({"type": "error", "data": "read-only demo stream"})
                     continue
-                key = _client_key(websocket)
+                key = _client_key(websocket, supplied)
                 if not limiter.allow(key):
                     await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                     return

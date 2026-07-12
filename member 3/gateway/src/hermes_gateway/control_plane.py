@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 from collections.abc import AsyncIterator
 from typing import Protocol
 
@@ -74,7 +75,8 @@ class HttpControlPlane:
                     yield event
                 backoff = self._poll_seconds
             except (httpx.HTTPError, ValueError):
-                backoff = min(backoff * 2, 30)
+                jitter = secrets.randbelow(250) / 1000
+                backoff = min(backoff * 2 + jitter, 30)
             await asyncio.sleep(backoff)
 
     async def statuses(self) -> list[WrapperStatus]:
@@ -111,4 +113,3 @@ class FakeControlPlane:
     async def emit(self, event: CanonicalEvent) -> None:
         self._events.append(event)
         await self._queue.put(event)
-
