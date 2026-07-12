@@ -1,0 +1,32 @@
+{
+  "name": "@hermes/member-2-control-plane",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "bun test tests",
+    "test:contracts": "bun test tests/contracts.test.ts",
+    "test:integration": "bun test tests/integration.test.ts tests/webhook.test.ts tests/writeback.test.ts tests/privacy.test.ts tests/security-boundary.test.ts",
+    "dev:services": "bun run scripts/dev-services.ts",
+    "demo:seed": "bun run scripts/seed.ts",
+    "demo:check": "bun run scripts/demo-check.ts",
+    "health": "bun run scripts/health.ts",
+    "deploy:worker": "wrangler deploy --config infra/wrangler.toml",
+    "deploy:convex": "convex deploy",
+    "check:policies": "bun run scripts/validate-policies.ts",
+    "ci:eval-gate": "bun run scripts/check-eval-report.ts"
+  },
+  "dependencies": {
+    "convex": "^1.25.4",
+    "jose": "^6.1.0",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260712.1",
+    "@types/bun": "latest",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.44.0"
+  }
+}

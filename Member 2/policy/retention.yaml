@@ -1,0 +1,28 @@
+schemaVersion: 1
+name: retention
+version: 2.0.0
+rules:
+  - id: retention.voice.none
+    description: Raw voice audio is not retained after transcription.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { minutes: 0 }
+  - id: retention.secret.minimum
+    description: Suspected-secret raw output has zero retention; only fingerprints and audit facts remain.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { rawHours: 0, derivedSearchProjection: false }
+  - id: retention.private.short
+    description: Private provider payloads and scanner output use the shortest practical retention.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters: { providerPayloadHours: 0, scannerOutputHours: 24 }
+  - id: retention.entity.bounded
+    description: Entity memory expires and can be deleted without erasing immutable audit facts.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters: { defaultDays: 30, maximumDays: 365, deleteProjection: true }

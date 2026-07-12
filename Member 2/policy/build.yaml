@@ -1,0 +1,28 @@
+schemaVersion: 1
+name: build
+version: 2.0.0
+rules:
+  - id: build.repository.required
+    description: Builder work requires an allowlisted target repository.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { approvedNewRepositoryHandoffAllowed: true }
+  - id: build.delivery.pr
+    description: Builder output is delivered as a branch and pull request by default.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters: { defaultAction: build_branch_and_pr }
+  - id: build.quality.gates
+    description: Complete tests, security scan, critic pass and build manifest are mandatory.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { tests: true, security: true, critic: true, manifest: true }
+  - id: build.production.confirm
+    description: Deployment, paid services and destructive migrations require human confirmation.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { humanConfirmation: true }

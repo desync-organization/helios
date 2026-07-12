@@ -1,0 +1,28 @@
+schemaVersion: 1
+name: escalation
+version: 2.0.0
+rules:
+  - id: escalation.protected-path
+    description: Changes to protected paths require a human decision.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters: { escalate: true }
+  - id: escalation.security-disclosure
+    description: Unpublished vulnerabilities and possible secret exposure enter restricted review.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { restrictedReview: true, publicWrite: false }
+  - id: escalation.critic-repeat
+    description: Two equivalent critic rejections escalate instead of looping.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters: { maximumEquivalentRejections: 2 }
+  - id: escalation.material-decision
+    description: Missing auth, payment, privacy, deployment or data-shape decisions block builder work.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters: { topics: [auth, payments, privacy, deployment, data_shape] }

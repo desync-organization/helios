@@ -1,0 +1,15 @@
+name = "hermes-control-plane-ingress"
+main = "../apps/worker/src/index.ts"
+compatibility_date = "2026-07-12"
+workers_dev = true
+
+[vars]
+ENVIRONMENT = "development"
+HERMES_BOT_LOGIN = "hermes-control-plane[bot]"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Set secrets with `wrangler secret put`; never place their values here:
+# GITHUB_WEBHOOK_SECRET, CONTROL_PLANE_INGEST_TOKEN, RUNTIME_BEARER_TOKEN,
+# PROVIDER_PROXY_TOKEN, GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY and optional provider keys.

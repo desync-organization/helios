@@ -2,11 +2,21 @@
   "name": "helios",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "Member 2"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "dev:services": "bun run --cwd \"Member 2\" dev:services",
+    "test": "bun run --cwd \"Member 2\" test",
+    "test:contracts": "bun run --cwd \"Member 2\" test:contracts",
+    "test:integration": "bun run --cwd \"Member 2\" test:integration",
+    "demo:seed": "bun run --cwd \"Member 2\" demo:seed",
+    "demo:check": "bun run --cwd \"Member 2\" demo:check",
+    "deploy:worker": "bun run --cwd \"Member 2\" deploy:worker"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",

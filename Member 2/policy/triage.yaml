@@ -1,0 +1,22 @@
+schemaVersion: 1
+name: triage
+version: 2.0.0
+rules:
+  - id: triage.labels.allowlisted
+    description: Only repository-approved labels may be applied.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters: { requireAllowlist: true, maxLabels: 10 }
+  - id: triage.duplicate.exact-link
+    description: Duplicate closure requires an exact repository-local issue link and high confidence.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters: { minimumConfidence: 0.95, requireLinkedIssue: true }
+  - id: triage.reply.substantive
+    description: Automated replies must contain evidence or a specific clarification request.
+    severity: warning
+    version: 2.0.0
+    enabled: true
+    parameters: { minimumCharacters: 40 }

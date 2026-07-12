@@ -10,6 +10,7 @@
 
 # local environment files
 .env*
+!**/.env.example
 
 # logs
 npm-debug.log*
@@ -22,3 +23,9 @@ pnpm-debug.log*
 next-env.d.ts
 
 models/
+
+# Member 2 local service state and credentials
+/Member 2/.dev.vars
+/Member 2/.env
+/Member 2/reports/
+.wrangler/

@@ -1,89 +1,22 @@
-/**
- * API route for executing git commands.
- * This enables the multiverse view to manage git branches.
- * 
- * NOTE: This route only works in development mode with Node.js runtime.
- * For Tauri production builds, git commands should be executed via Tauri commands
- * in the Rust backend instead.
- */
-import { exec } from "child_process";
-import { promisify } from "util";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { NextRequest, NextResponse } from "next/server";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+const READ_ONLY_COMMANDS: Record<string, string[]> = {
+  "git branch": ["branch", "--list"],
+  "git branch -a": ["branch", "--all", "--list"],
+};
 
-interface GitCommandRequest {
-  command: string;
-}
-
-interface GitCommandResponse {
-  output: string;
-  error?: string;
-}
-
-/**
- * Whitelist of allowed git commands for security.
- */
-const ALLOWED_COMMANDS = [
-  /^git branch$/,
-  /^git branch -a$/,
-  /^git branch [a-zA-Z0-9_/-]+$/,
-  /^git branch -d [a-zA-Z0-9_/-]+$/,
-  /^git branch -D [a-zA-Z0-9_/-]+$/,
-  /^git checkout [a-zA-Z0-9_/-]+$/,
-  /^git merge [a-zA-Z0-9_/-]+$/,
-];
-
-/**
- * Validate that the command is safe to execute.
- */
-function isCommandAllowed(command: string): boolean {
-  return ALLOWED_COMMANDS.some((pattern) => pattern.test(command));
-}
-
-/**
- * POST /api/git
- * Execute a git command and return the output.
- */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const body = (await request.json()) as GitCommandRequest;
-    const { command } = body;
-
-    if (!command) {
-      return NextResponse.json(
-        { error: "Command is required" },
-        { status: 400 },
-      );
-    }
-
-    // Security: Only allow whitelisted commands
-    if (!isCommandAllowed(command)) {
-      return NextResponse.json(
-        { error: "Command not allowed" },
-        { status: 403 },
-      );
-    }
-
-    // Execute the git command
-    const { stdout, stderr } = await execAsync(command, {
-      cwd: process.cwd(),
-      maxBuffer: 1024 * 1024, // 1MB buffer
-    });
-
-    const response: GitCommandResponse = {
-      output: stdout || stderr,
-    };
-
-    return NextResponse.json(response);
+    const body = await request.json() as { command?: unknown };
+    if (typeof body.command !== "string") return NextResponse.json({ error: "Command is required" }, { status: 400 });
+    const args = READ_ONLY_COMMANDS[body.command];
+    if (!args) return NextResponse.json({ error: "Only read-only branch listing is allowed. Branch creation, checkout, merge, and deletion must go through the policy-gated control plane." }, { status: 403 });
+    const { stdout, stderr } = await execFileAsync("git", args, { cwd: process.cwd(), timeout: 5_000, maxBuffer: 256 * 1024, env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "/tmp", LANG: "C", NODE_ENV: process.env.NODE_ENV ?? "production" } });
+    return NextResponse.json({ output: stdout || stderr });
   } catch (error) {
-    console.error("Git command execution error:", error);
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to execute command",
-      },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to list branches" }, { status: 500 });
   }
 }

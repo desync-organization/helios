@@ -1,0 +1,29 @@
+schemaVersion: 1
+name: autonomy
+version: 2.0.0
+rules:
+  - id: autonomy.critic.exact-hash
+    description: Every mutation requires an independent passing critic for the exact artifact hash.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { verdict: pass, exactHash: true, independent: true }
+  - id: autonomy.merge.bounded
+    description: Autonomous merges require explicit repository opt-in, green checks and bounded patches.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { requireOptIn: true, requireChecks: true, requireTests: true, requireSecurity: true }
+  - id: autonomy.external-result.required
+    description: Live completion requires a persisted HTTPS result URL returned by the external system.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters: { requireHttps: true }
+  - id: autonomy.hard-never
+    description: Destructive GitHub actions, secret access and public security publication are impossible.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters:
+      denied: [force_push, branch_delete, settings_mutation, secret_access, release_publish, advisory_publish]

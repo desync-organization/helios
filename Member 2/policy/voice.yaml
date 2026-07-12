@@ -1,0 +1,22 @@
+schemaVersion: 1
+name: voice
+version: 2.0.0
+rules:
+  - id: voice.confirm.transcript
+    description: A transcript must be confirmed before it can create a task.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters: { confirmationRequired: true }
+  - id: voice.speech.safe-content
+    description: Speech must not include private issue text, finding evidence, PII or secrets.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { allowedPurposes: [alert, standup_digest], textFallback: true }
+  - id: voice.audio.ephemeral
+    description: Raw audio is discarded immediately after transcription.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { retainMinutes: 0 }

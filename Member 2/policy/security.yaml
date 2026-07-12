@@ -1,0 +1,34 @@
+schemaVersion: 1
+name: security
+version: 2.0.0
+rules:
+  - id: security.audit.read-only
+    description: Security audits are repository-scoped and read-only unless remediation is separately approved.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { defaultMode: read-only, remediationRequiresSeparateConsent: true }
+  - id: security.target.repository-only
+    description: External targets, production services, destructive scans and active exploitation are denied.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { repositoryOnly: true, activeExploitation: false, destructive: false }
+  - id: security.secret.never-persist
+    description: Raw discovered secret values must be redacted before any durable boundary.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { storeFingerprintOnly: true, maximumAffixCharacters: 4 }
+  - id: security.disclosure.private
+    description: Unpublished findings cannot become public issues, comments, advisories or releases.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { publicDisclosure: false, restrictedReview: true }
+  - id: security.advisory.primary-source
+    description: CVE and CWE claims need an authoritative URL and retrieval timestamp.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters: { requirePrimarySource: true, requireRetrievedAt: true }

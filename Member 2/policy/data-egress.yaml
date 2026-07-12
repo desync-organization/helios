@@ -1,0 +1,25 @@
+schemaVersion: 1
+name: data-egress
+version: 2.0.0
+rules:
+  - id: egress.private.local-only
+    description: Private repository content remains local unless explicit unexpired consent permits a named provider.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { defaultPrivateMode: local-only, explicitProviderConsent: true }
+  - id: egress.redact.before-send
+    description: Suspected secrets and PII are removed before any provider request.
+    severity: critical
+    version: 2.0.0
+    enabled: true
+    parameters: { secretRedaction: true, piiRedaction: true }
+  - id: egress.provider.allowlist
+    description: Provider, purpose and payload size must be allowlisted and auditable.
+    severity: blocking
+    version: 2.0.0
+    enabled: true
+    parameters:
+      providers: [workers_ai, haiku, linkup, osv, github_advisory, elevenlabs]
+      maxRequestBytes: 131072
+      recordCost: true
