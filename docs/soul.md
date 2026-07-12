@@ -10,6 +10,9 @@
 - **Track:** AI as Agency
 - **Target score:** L5 on all seven parameters (164 base) + all five power-ups (+125) + uncapped overflow (+20/task completed live)
 - **One sentence:** A manager agent plans, a swarm of on-device Small Language Model specialists executes, work lands on a **real GitHub repository** — issues triaged, duplicates closed, bugs fixed with tested PRs, docs updated, releases drafted — autonomously, under 60 seconds and under $0.01 per task, with a control surface a non-engineer can operate.
+- **Capability envelope:** The same Helios kernel also turns scoped briefs into tested build PRs and
+  performs consented, defensive repository vulnerability audits; the maintainer-on-duty flow remains
+  the primary declared job and judging story.
 
 ---
 
@@ -171,6 +174,24 @@ PR during judging is another +20.
 **A task is "complete" when the artifact lands on GitHub**: a posted comment, an applied label,
 a closed duplicate, a merged PR, a draft release. Nothing counts until it is visible on the
 real surface. This is the internal bar for every feature below.
+
+### 3.1 Multipurpose deployment profiles
+
+The maintainer-on-duty job remains the primary declared job and judged vertical slice. Helios is a
+general agency runtime, however, so the same planner, scheduler, expert registry, artifact workspace,
+critic, policy engine and write-back boundary also ship with two additional profiles:
+
+- **Builder (`build`)** — turns a scoped brief or feature request into requirements, architecture,
+  a task DAG, code, tests, security checks, documentation and a reviewable GitHub PR.
+- **Repository security auditor (`security_audit`)** — inventories an allowlisted repository, runs
+  approved dependency/secret/SAST/config checks, normalizes and explains evidence, produces a private
+  report, and can open a separately approved remediation PR.
+
+These are profiles, not separate products or hard-coded orchestration paths. All three use typed
+artifacts, least-privilege tools, independent critic review, repository policy, observable traces and
+credential-free intents. Security audit is local/read-only by default: no external target scanning,
+active exploitation, secret exfiltration or public disclosure is permitted. Builder deployment and
+new-repository creation require explicit policy and human confirmation.
 
 ---
 
@@ -611,6 +632,12 @@ remaining VRAM/RAM. Full fallback path in §18.
 > guardrails) in under 10 min unassisted"* — with a volunteer **the team did not choose**, and
 > the role must then actually work.
 
+**Implementation baseline (12 July 2026):** the root Next.js frontend is accepted as complete and is
+frozen for the three-person backend/model work split. The requirements below are therefore acceptance
+criteria for the existing interface, not an assignment to scaffold another dashboard. Remaining work
+may provide backend APIs, realtime compatibility, authentication hardening and regression verification;
+it must not silently claim an unimplemented screen as evidence.
+
 ### 11.1 Role Builder — the entire L5 test surface, built as a wizard
 
 Five screens, every field defaulted, nothing free-form except the job description:
@@ -672,10 +699,11 @@ All five, each doing real work, each with pre-staged evidence. +125.
 |---|---|---|
 | Inference | llama.cpp (server mode, multi-slot) + GGUF | Grammar-constrained JSON for all fast-lane outputs |
 | Models | Qwen3-8B-Q4 (planner/critic), Qwen3-4B-Q4 (triage/docs/etc.), Qwen2.5-Coder-7B-Q4 (code experts), bge-small (embeddings) | Personas share weights; ~3 model files cover 10+ roles |
+| Fine-tuning | PEFT + TRL; QLoRA by default on constrained VRAM, ordinary LoRA when the base fits | Offline, reviewed data only; versioned adapters are evaluated, converted to GGUF and loaded separately by llama.cpp |
 | Runtime | Python 3.12, asyncio, FastAPI (local API), Pydantic (artifact schemas) | |
 | Control plane | **Convex** | Queue, traces, memory, evals, alerts, roles |
 | Ingress | **Cloudflare Worker** | Webhook HMAC verify + normalize + enqueue |
-| Dashboard | React + TypeScript + Tailwind + React Flow (DAG/trace) + Recharts (analytics), on **Cloudflare Pages** | Convex live queries; no polling code |
+| Frontend | Existing root Next.js 16 + React 19 + TypeScript + Tailwind + Zustand + `@xyflow/react`, deployed on **Cloudflare Pages** | Accepted/frozen visual implementation; backend compatibility gateway projects canonical events |
 | Desktop shell | Tauri wrapping the dashboard | Keeps the PRD's desktop-app identity; browser tab is the judging fallback |
 | Real surface | GitHub REST + webhooks (PyGithub / httpx) | The only credentialed component |
 | Live search | **Linkup** SDK | Research Expert tool |
@@ -683,10 +711,16 @@ All five, each doing real work, each with pre-staged evidence. +125.
 | Local telemetry | psutil + nvidia-smi | Model-timeline view |
 | Evals/CI | pytest harness + GitHub Actions | Branch protection = the real gate |
 
-Deliberately cut from the PRD for the hackathon: PyTorch/PEFT/LoRA training (personas over
-fine-tunes — zero training time), Docker (native only), SQLite (Convex replaces it),
-Windows/Linux/macOS matrix (demo machine only). All remain on the roadmap; none score points
-this weekend.
+Approved scope change (12 July 2026): LoRA/QLoRA training is now included. Train one high-volume
+Qwen3-4B triage/reply/docs adapter first; keep Planner base-first and keep Critic independent from the
+adapter that produced the artifact it judges. Training uses reviewed, licensed and sanitized data with
+strict train/dev/held-out splits. The Gauntlet is never training data. Promotion requires base/tokenizer
+hash compatibility, baseline-versus-adapter gains, no safety regression, latency/memory acceptance,
+three stable final eval runs and a demonstrated rollback. Closed-loop failures remain pending review
+and never enter training automatically.
+
+Still deliberately cut for the hackathon: Docker (native only), SQLite (Convex replaces it), and the
+Windows/Linux/macOS support matrix (demo machine only).
 
 ---
 
@@ -777,23 +811,32 @@ also a feature" → resume or fall back to the recorded run walkthrough in the t
 
 ## 17. Build plan
 
-Team of 4 assumed; 36 buildable hours. Order is dependency-driven — the vertical slice comes
-first because every rubric row needs a working pipeline underneath it.
+Team of 3; 36 buildable hours per member. The visual frontend is an accepted frozen input. No member is
+assigned to recreate it. The remaining work is split evenly across runtime execution, durable control
+plane/external effects, and model-quality/realtime/reliability proof.
 
-| Phase | Hours | Deliverable | Owner lane |
+| Hours | Member 1 — Runtime | Member 2 — Control plane | Member 3 — Model quality and proof |
 |---|---|---|---|
-| 0 | 0–2 | Repos, Convex project, CF Worker skeleton, llama.cpp serving Qwen3-8B/4B, GitHub app + webhook firing end-to-end | All |
-| 1 | 2–10 | **Vertical slice:** webhook → task → planner → triage → critic → labeled reply on real GitHub. Ugly but real. Tag `agents-v1`, run Gauntlet-v0 (10 cases). | Runtime ×2, Convex/infra ×1, UI ×1 |
-| 2 | 10–18 | Parallel DAG + dedupe + research(Linkup) branches; deep lane (worktree, coder expert, test runner, PR open); spawn_expert + blocked/escalation path | Runtime ×2 |
-| 2′ | 10–18 | Dashboard: run list, live trace tree, cost analytics; entity + policy memory wired into planner pack | UI ×1, infra ×1 |
-| 3 | 18–26 | Role Builder wizard; diff view; alerts + ElevenLabs voice; eval CI gate + closed-loop capture; autonomy policy enforcement in write-back | Split |
-| 4 | 26–32 | Gauntlet to 40 cases; agents v2→v3 (chart the climb); volunteer rehearsals ×3; multi-repo (#2) onboard; docs site live on Pages | All |
-| 5 | 32–36 | Freeze `agents-v4`; 3× full runs recorded; runbook rehearsal ×2; evidence bookmarks; sleep > polish | All |
+| 0–4 | Python runtime, Pydantic mirror, in-memory adapter, model bootstrap | Bun/root integration, contracts, Convex/Worker, GitHub App | Eval/training schema, hardware/base audit, data governance, gateway fixture |
+| 4–10 | Planner/DAG/artifacts/critic and real maintainer fast lane | Webhook→lease→trace→exactly-once comment/labels | Gateway prompt/event path, `agents-v1`, initial cases, data pipeline |
+| 10–18 | Maintainer deep lane, worktrees, safe commands and complete task coverage | PR/write-back gates, policy, protected paths and canonical subscriptions | 40-case maintainer Gauntlet, builder/security suites, QLoRA run |
+| 18–26 | Builder lane, defensive security-audit lane, spawn/escalation | Builder/security contracts, findings, memory, multi-repo, adapter registry, providers | Adapter export/model card, base-vs-adapter report, live gateway, failure matrix |
+| 26–30 | Resume/outbox, adapter loader, telemetry, latency/security hardening | CI gate, idempotency/privacy/outage tests, deployment | v2→v4 comparisons, three final evals, E2E/performance/promotion/rollback proof |
+| 30–34 | Joint integration and runtime-owned blocker fixes | Joint integration and live-service validation | Three-mode acceptance, documentation and evidence capture |
+| 34–36 | Warm models and runtime operations | Service/GitHub operations and emergency modes | Two rehearsals, evidence index and fallback replay |
 
-**Scope-cut order if behind** (reverse-value): Tauri shell (browser is fine) → voice-assign
-(keep voice alerts) → role self-adjust (keep spawn) → docs site → multi-repo. **Never cut:**
-the vertical slice, the trace viewer, the Role Builder, the eval gate — those four are ~70% of
-the base points.
+Primary acceptance runs are: (1) judge-authored maintainer issue to real GitHub reply in under one
+minute, (2) scoped product brief/feature to tested PR, and (3) allowlisted read-only repository audit to
+redacted evidence-backed report plus a separately approved remediation PR.
+
+If only one GPU is available, training windows are reserved in advance. QLoRA never competes with
+llama.cpp demo latency/evidence runs, and no training job runs after the final configuration freeze.
+
+**Scope-cut order if behind** remains: Tauri shell (browser is fine) → voice-assign (keep text and voice
+alerts) → role self-adjust (keep spawn) → secondary hosted/docs polish → second-repository polish.
+Never cut the maintainer vertical slice, trace evidence, independent critic, eval gate, hard write-back
+policy or adapter rollback. Builder/security breadth may be reduced to one strong end-to-end fixture
+each, but their common contracts and safety boundaries remain.
 
 ---
 
@@ -859,6 +902,14 @@ Ship nothing that isn't on this list; everything on this list is demoable in und
 - [ ] Screenshot + live link to a genuinely blocked merge
 - [ ] One captured-from-failure eval case traceable failure→capture→CI
 - [ ] v1→v4 pass-rate chart with git tags
+
+**Multipurpose modes and LoRA**
+- [ ] One scoped builder request produces requirements, code, tests, security evidence and a real PR
+- [ ] One read-only repository audit produces normalized redacted findings with zero GitHub mutations
+- [ ] One separately approved remediation task produces a tested PR and rescan delta
+- [ ] QLoRA/LoRA candidate has dataset manifest, model card, adapter/base hashes and GGUF load proof
+- [ ] Frozen base-versus-adapter report shows quality, safety, latency and memory; losing adapter is not promoted
+- [ ] Critic does not use the producer adapter; adapter rollback is demonstrated and audited
 
 **Memory**
 - [ ] Second issue from same account gets a history-aware reply

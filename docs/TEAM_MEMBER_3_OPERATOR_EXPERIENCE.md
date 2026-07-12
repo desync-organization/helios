@@ -1,511 +1,497 @@
-# Team Member 3 — Management UI, Desktop Shell, Docs, Voice, and Demo
+# Team Member 3 — LoRA/QLoRA, Evaluation, Realtime Integration, Reliability, and Evidence
 
 ## Mission
 
-You own everything a judge, maintainer, community manager, or non-engineer sees and operates. Your
-job is to make the work produced by Members 1 and 2 understandable, controllable, and demonstrably
-real. The dashboard must answer: what work entered, what plan was formed, which agents acted, what
-they read and produced, how much it cost, why the critic accepted or rejected it, what landed on
-GitHub, and what requires a human.
+Own model quality and whole-system proof. The frontend is already built, so your work is not to design
+screens or recreate a dashboard. You replace that old assignment with five substantial engineering
+responsibilities:
 
-You also own the L5 non-engineer test: a volunteer must create and activate a working specialist in
-under ten minutes without help. The Role Builder, review queue, pause control, prompt/policy editors,
-voice assignment, alert playback, Tauri shell, public docs site, and evidence package are not separate
-side projects; they are one operator experience built on the same contracts.
+1. build a governed LoRA/QLoRA data and training pipeline;
+2. own the multi-mode Gauntlet, scorers, regression gates and model benchmarks;
+3. build the backend WebSocket compatibility gateway used by the completed Next.js client;
+4. run cross-system reliability, privacy, security and performance acceptance tests; and
+5. produce honest documentation, evidence and rehearsal assets for the live demo.
 
-Your work must function before the real runtime and backend exist. Build a fixture-backed data adapter
-and complete every screen with deterministic seed records. Switch to Convex queries without changing
-component props. Never wait for models or GitHub credentials to begin.
+Your output proves that Hermes can be used as a GitHub maintainer, product-building agency, and
+repository vulnerability auditor while retaining one safe, observable Helios execution model.
 
-### Scope invariant
+The judged headline remains the maintainer-on-duty workflow from `soul.md`. Builder and security modes
+are real reusable capabilities, not a vague “future use” slide: each needs fixtures, an end-to-end run,
+objective evaluation, and an evidence artifact.
 
-`soul.md` remains the product feature source of truth. This three-person plan redistributes its full
-hackathon scope; it does not authorize the old scope-cut list or remove Tauri, multi-repo, voice,
-overflow, self-adjustment, hosted fallback, any maintainer task type, or any evidence requirement.
-Fixtures keep development moving but never replace the live implementation or final proof.
+## Planning baseline — 12 July 2026
 
-## What the other two members own
+- The existing root Next.js/React frontend under `src/` and `public/` is complete and frozen for this
+  split. Do not add pages, components, styles, responsive work, route trees, UI kits or a replacement
+  dashboard.
+- Do not create the obsolete `apps/dashboard` Vite application from the old assignment.
+- You may build a **backend compatibility gateway**, automated browser/E2E tests, documentation and
+  packaging. Those are integration/quality tasks, not frontend construction.
+- The current repository uses Bun and Next.js. Preserve `bun.lock`; do not introduce pnpm workspace
+  assumptions or commit a generated `package-lock.json`.
+- `soul.md` is authoritative for Hermes as the agency and Helios as the runtime, real GitHub results,
+  independent critic, typed handoffs, observable costs, memory, policy and hard guardrails.
+- “Frontend Expert” is a runtime specialist that repairs web repositories. It remains in the expert
+  roster even though the Hermes frontend itself is complete.
 
-### Member 1 — Runtime and Intelligence
+## Equal three-person split
 
-Member 1 owns `runtime/`, `agents/`, and `evals/`. They produce plans, spans, typed artifacts, model
-telemetry, critic verdicts, spawned-agent events, role-version diffs, escalations, Gauntlet results and
-write-back intents. You visualize these records but do not reinterpret or silently repair them.
+| Member | Primary lane | Your dependency on them |
+|---|---|---|
+| **1 — Runtime** | Planner, scheduler, experts, model serving, tools, critic | Loads promoted adapters; executes eval tasks; emits canonical events |
+| **2 — Control plane** | Convex, contracts, GitHub/Cloudflare, policy, memory, secrets | Persists evals/promotions; exposes canonical cursor feed; commits approved cases |
+| **3 — You** | Training, evaluation, gateway, E2E reliability, evidence | Produce adapter/eval packages and prove the merged system |
 
-### Member 2 — Control Plane and Integrations
-
-Member 2 owns `convex/`, `apps/worker/`, `packages/contracts/`, `policy/`, `.github/`, root scripts,
-Cloudflare bindings, GitHub App/write-back, task leases, memory persistence, eval capture, alerts and
-server-side ElevenLabs calls. You consume generated Convex APIs and the shared contract package. You
-never place GitHub, ElevenLabs, Cloudflare or runtime bearer secrets in browser code.
+Every member has a 36-hour schedule with roughly 30 owned engineering hours and 6 shared integration
+hours. This is not a “docs-only” lane: training, scoring and gateway code are production dependencies.
 
 ## Repository ownership
 
-You may edit these paths without coordination:
+You own:
 
 ```text
-apps/dashboard/
-apps/desktop/
-apps/docs/
-evidence/
-```
-
-Do not directly edit:
-
-```text
-runtime/                         # Member 1
-agents/                          # Member 1
-evals/                           # Member 1
-convex/                          # Member 2
-apps/worker/                     # Member 2
-packages/contracts/              # Member 2; imported, never duplicated
-policy/                          # Member 2; edited only through the product UI/API
-.github/                         # Member 2
-package.json                     # Member 2 owns root orchestration
-pnpm-workspace.yaml              # Member 2
-.env.example                     # request additions from Member 2
-README.md                        # Member 2 owns root run instructions
-```
-
-Your app-specific `package.json`, Vite config, Pages config, Tailwind config, Tauri config and docs
-configuration remain in your owned directories.
-
-## Shared architecture and the no-blocking rule
-
-Implement one `DataProvider` interface with two adapters:
-
-```text
-FixtureDataProvider   → static shared JSON fixtures and local interactive mutations
-ConvexDataProvider    → generated Convex queries/mutations/actions
-```
-
-All pages and components consume provider hooks, never raw fixture imports and never direct fetches
-inside presentation components. The environment flag `VITE_DATA_MODE=fixture|convex` selects the
-adapter. This lets you finish UI and rehearse while Members 1 and 2 are still integrating.
-
-Freeze this provider-to-Convex map with Member 2 at hour 2. Fixture methods must have the same input,
-loading/error shape and return type:
-
-| UI capability | Member 2 function(s) |
-|---|---|
-| Task list/detail/assignment | `tasks.list`, `tasks.get`, `tasks.enqueueFromUi` |
-| Approved backlog | `tasks.validateApprovedBacklog`, `tasks.enqueueApprovedBacklog` |
-| Run list/detail/compare | `runs.list`, `runs.get`, `runs.compare` |
-| Trace and artifacts | `spans.listByRun`, `artifacts.listByRun`, `artifacts.get` |
-| Agents, prompts and Role Builder | `agents.list`, `agents.getVersions`, `agents.createRoleDraft`, `agents.createVersionDraft`, `agents.startTestFlight`, `agents.activateVersion`, `agents.setActive` |
-| Reviews | `reviews.list`, `reviews.get`, `reviews.approve`, `reviews.editAndApprove`, `reviews.reject` |
-| Evals | `evalCases.list`, `evalCases.approve`, `evalCases.reject`, `evalRuns.list`, `evalRuns.get`, `evalRuns.start` |
-| Alerts | `alerts.listRules`, `alerts.saveRule`, `alerts.listEvents`, `alerts.acknowledge` |
-| Policy | `policies.list`, `policies.validateDraft`, `policies.saveDraft` |
-| Controls | `system.get`, `system.setGlobalPause`, `system.setAgentPause`, `system.setWritebackMode` |
-| Repository health | `repositories.listHealth` |
-| Analytics | `analytics.costByAgent`, `analytics.latencyByType`, `analytics.modelTimeline` |
-| Voice | `voice.transcribeAssignment`, `voice.synthesizeAlert`, `voice.generateStandup` |
-
-Only the provider adapters call these generated functions. The only direct HTTP reads allowed in UI
-infrastructure are safe `GET` health/status calls to `VITE_WORKER_URL` and `VITE_RUNTIME_URL`; no
-presentation component fetches them itself.
-
-The final repository is expected to run with:
-
-```bash
-pnpm install
-python -m pip install -e "runtime[dev]"
-pnpm dev
-```
-
-You are responsible for making these app-specific commands work so Member 2 can compose them:
-
-```bash
-pnpm --filter dashboard dev
-pnpm --filter dashboard build
-pnpm --filter dashboard test
-pnpm --filter docs dev
-pnpm --filter docs build
-pnpm --filter desktop tauri dev
-pnpm --filter desktop tauri build
-```
-
-## Shared contracts you consume
-
-Import domain types from `@hermes/contracts`. Do not define local copies of `Task`, `Run`, `Span`,
-`Artifact`, `Agent`, `EvalRun`, `AlertEvent`, `ReviewItem`, `Policy`, or `WritebackAction`.
-
-Assume the following key relationships:
-
-```text
-Task 1 ── N Runs
-Run  1 ── 1 PlanArtifact
-Run  1 ── N Spans
-Run  1 ── N Artifacts
-Span 0..1 parentSpanId → Span
-Span 0..1 outputArtifactRef → Artifact
-Agent name + version → producing spans/artifacts
-Run  0..N resultUrls → real GitHub artifacts
-Alert 0..1 runId → Run
-ReviewItem 1 runId + artifact chain → operator decision
-```
-
-Important semantic rules:
-
-- Show `costUsd` and `costCloudEquivalentUsd` as different metrics; never relabel equivalent cost as
-  actual spend.
-- Show fallback flags and planner fallback honestly.
-- `origin: spawned` must be visually distinct and show its birth run/time.
-- Failed commands and failed tests remain red even if later work passes.
-- A critic `revise` is a visible edge back to the producer, not silently folded into the final result.
-- GitHub work counts as complete only when a `resultUrl` exists.
-- Fixture, dry-run, failed, cancelled and queue-only items never increment the completed-real-task
-  counter.
-- Protected/private artifact fields must use the redacted operator projection Member 2 supplies.
-
-## Required environment variables
-
-Request these browser-safe entries in Member 2's `.env.example`:
-
-```text
-VITE_DATA_MODE=convex
-VITE_CONVEX_URL=
-VITE_WORKER_URL=http://127.0.0.1:8787
-VITE_RUNTIME_URL=http://127.0.0.1:8788
-VITE_GITHUB_REPO_URL=
-VITE_DOCS_URL=
-VITE_DEMO_MODE=1
-VITE_ENABLE_VOICE=1
-VITE_ENABLE_TAURI=1
-```
-
-Never use any variable beginning with `GITHUB_APP_PRIVATE`, `GITHUB_TOKEN`, `ELEVENLABS_API_KEY`,
-`CLOUDFLARE_API_TOKEN`, `HELIOS_RUNTIME_TOKEN`, or `LINKUP_API_KEY`. Vite exposes prefixed values to
-the browser bundle; secrets must remain server-side.
-
-## Dashboard implementation layout
-
-Create a clear feature-oriented structure:
-
-```text
-apps/dashboard/
-├─ package.json
-├─ vite.config.ts
-├─ tsconfig.json
-├─ tailwind.config.ts
-├─ wrangler.toml
-├─ public/
-│  ├─ logo.svg
-│  ├─ demo-qr.svg
-│  └─ manifest.webmanifest
+training/
+├─ pyproject.toml
+├─ configs/
+├─ src/hermes_training/
+└─ tests/
+datasets/
+├─ manifests/
+├─ processed/                 # small reviewed data only; respect licenses/privacy
+└─ README.md
+evals/
+├─ gauntlet/
+├─ scorers/
+├─ snapshots/
+└─ reports/
+adapters/
+├─ manifests/                 # metadata/checksums/model cards; large weights are ignored
+├─ promoted/
+└─ README.md
+benchmarks/
+gateway/
 ├─ src/
-│  ├─ main.tsx
-│  ├─ app.tsx
-│  ├─ routes.tsx
-│  ├─ styles.css
-│  ├─ providers/
-│  │  ├─ data-provider.tsx
-│  │  ├─ fixture-provider.tsx
-│  │  ├─ convex-provider.tsx
-│  │  ├─ theme-provider.tsx
-│  │  └─ audio-provider.tsx
-│  ├─ fixtures/
-│  │  ├─ index.ts
-│  │  └─ mutable-store.ts
-│  ├─ components/
-│  │  ├─ shell/
-│  │  ├─ common/
-│  │  ├─ task/
-│  │  ├─ run/
-│  │  ├─ trace/
-│  │  ├─ artifact/
-│  │  ├─ agent/
-│  │  ├─ eval/
-│  │  ├─ policy/
-│  │  ├─ alert/
-│  │  ├─ review/
-│  │  ├─ voice/
-│  │  ├─ backlog/
-│  │  └─ command/
-│  ├─ features/
-│  │  ├─ overview/
-│  │  ├─ tasks/
-│  │  ├─ runs/
-│  │  ├─ run-detail/
-│  │  ├─ run-compare/
-│  │  ├─ agents/
-│  │  ├─ role-builder/
-│  │  ├─ reviews/
-│  │  ├─ evals/
-│  │  ├─ alerts/
-│  │  ├─ models/
-│  │  ├─ policies/
-│  │  ├─ prompts/
-│  │  └─ settings/
-│  ├─ hooks/
-│  ├─ lib/
-│  │  ├─ formatting.ts
-│  │  ├─ search.ts
-│  │  ├─ diff.ts
-│  │  ├─ dag-layout.ts
-│  │  ├─ downloads.ts
-│  │  └─ redaction.ts
-│  └─ test/
-└─ index.html
+├─ tests/
+└─ README.md
+tests/e2e/
+evidence/
+docs/runbooks/
 ```
 
-Use React, TypeScript, Tailwind, React Router, React Flow, Recharts, a small accessible component
-library, and a maintained structured diff component. Do not introduce multiple overlapping UI kits.
+You do not own:
 
-## Required routes and exact contents
+```text
+src/components/, src/app/page.tsx, src/app/globals.css, public/ # completed frontend
+runtime/, agents/                                                # Member 1
+convex/, apps/worker/, packages/contracts/, policy/              # Member 2
+src/app/api/                                                      # Member 2 server boundary
+```
 
-### `/` — Operations overview
+If a frozen frontend behavior blocks integration, document the exact payload and observed behavior.
+Do not quietly edit UI code. The team can make a separate explicit scope decision; your assigned work
+continues through fixtures and gateway contract tests.
 
-Show, in this order:
+## Product modes to train and evaluate
 
-1. Global live/dry-run state and emergency pause switch.
-2. Pending/running/done/escalated counters.
-3. Completed-real-task counter where each item links to GitHub.
-4. Live queue with source, task type, repository, age, lease/runtime and state.
-5. Active run strip with current node, elapsed time, actual cost and lane.
-6. Last-24-hour success rate, escalation rate, median latency and actual spend.
-7. Current model status/VRAM summary.
-8. Recent alerts and review items.
-9. Approved-backlog batch card showing queued/running/completed/escalated counts and a stop button
-   that invokes global pause; every completed item must link to its real GitHub result.
+### Mode A — GitHub maintainer
 
-The page must continue updating without manual refresh through Convex subscriptions.
+Required capabilities:
 
-Add an operator command/chat drawer available from every route. It is a focused control surface, not
-a fake general-purpose chatbot: the operator can type or dictate a maintainer request, paste an issue
-URL, ask to open the matching task/run, and receive a confirmation preview before enqueueing. Status
-answers must be assembled from live Convex records with links; never ask an LLM to invent system
-state. Submitting work calls the same assignment mutation as `/tasks`.
+- classify issue/PR work and apply repository-valid labels/priority;
+- detect likely duplicates with evidence;
+- ask for missing reproduction information;
+- answer from code/docs/live research with citations;
+- reproduce and fix small bugs with tests;
+- review community PRs;
+- update docs and draft releases;
+- escalate security, ambiguity, protected paths and repeated critic rejection.
 
-### `/tasks`
+Primary quality targets come from `soul.md`: triage/response at or above 85%, fix at or above 70%,
+three stable complete runs, and fast-lane latency under 60 seconds on the demo machine.
 
-- Search and filter by source, type, repo, status and date.
-- Show lease owner/expiry for active work.
-- Show result URLs and terminal reason.
-- Provide assignment composer: issue URL, plain request or microphone.
-- Allow safe retry only for failed tasks and explain that retries create a new run.
-- Provide an **Approved backlog release** panel. The operator pastes/selects existing issue URLs,
-  runs Member 2's validation, reviews accepted/rejected reasons, then confirms one batch. Show a loud
-  warning that this creates real GitHub work, the write-back mode, batch size, repository breakdown,
-  and a cancel button before confirmation. Never offer “generate issues” or count queued fixtures.
-- Show each released batch as a live drain with immutable batch ID and links to every terminal result
-  or escalation.
+### Mode B — Product builder
 
-### `/runs`
+Required capabilities:
 
-- Filter by task type, agent, status, repo, date and fallback usage.
-- Full-text search over the redacted searchable projection of prompts/artifacts/errors.
-- Columns: start time, task, repo, lane, status, latency, actual cost, cloud-equivalent cost, agent tag,
-  fallback flags and GitHub result.
-- Provide stable URLs and a compare checkbox.
+- turn a brief into bounded requirements and acceptance criteria;
+- choose an architecture consistent with repository constraints;
+- decompose frontend/backend/test/security/docs work into a DAG;
+- generate complete, reviewable files rather than disconnected snippets;
+- compile/typecheck/test the result;
+- produce a branch/PR and build manifest;
+- explain tradeoffs and escalate missing credentials/product decisions.
 
-### `/runs/:runId`
+The completed frontend already represents this product-builder experience. Your gateway lets backend
+progress, code artifacts, costs and completion URLs reach it without treating UI state as truth.
 
-This is the principal judging screen. Include:
+### Mode C — Repository security/vulnerability audit
 
-- Header with task, repo, lane, status, stopwatch, cost, result links and replay/fallback badges.
-- Plan DAG rendered with React Flow; node colors reflect lifecycle state.
-- Expandable trace tree aligned to DAG nodes.
-- Critic revision edges and concrete notes.
-- Span detail drawer: agent/version, model, prompt hash, timings, tokens, costs, tools, error/verdict,
-  input/output artifact links and policy IDs.
-- Artifact viewer with JSON, formatted domain view, raw/redacted indicator and download.
-- Memory-pack viewer separated into NOW, THIS USER'S PAST and BUSINESS POLICY.
-- Model timeline aligned with the run.
-- Escalation context if present.
-- GitHub write-back audit and resulting URLs.
+Required capabilities:
 
-### `/runs/compare`
+- inventory languages, packages, workflows, exposure points and trust boundaries;
+- run approved dependency, secret, SAST and configuration checks;
+- normalize and deduplicate findings;
+- rank severity, confidence, exploitability and reachability using deterministic evidence;
+- create an SBOM/SARIF-style artifact where supported;
+- avoid leaking suspected secrets or unpublished vulnerabilities;
+- propose a minimal fix and validate it with tests/rescan;
+- produce a private report, draft advisory or separately approved remediation PR.
 
-Accept `left` and `right` run IDs in the URL. Align spans primarily by plan node/role, not array index.
-Show:
+No evaluation may reward active exploitation, destructive tests, external target scanning, secret
+exfiltration or public disclosure. Read-only local audit is the default.
 
-- Plan structure differences.
-- Agent and version changes.
-- Prompt-hash and policy-version differences.
-- Input/output artifact diff.
-- Verdict and error divergence.
-- Token, latency, actual cost and equivalent-cost deltas.
-- Test result and GitHub result differences.
+## Realtime compatibility gateway
 
-Include a one-click bookmarked v1-failing/v4-passing pair in demo mode.
+The existing client uses `NEXT_PUBLIC_ORCHESTRATOR_URL`, defaulting to `ws://localhost:9100`. Build a
+small backend gateway at that boundary. Convex remains the source of truth; the gateway projects and
+replays safe events.
 
-### `/agents`
+### Frozen client messages to accept
 
-- Registry cards/table with name, job, model, tools, guardrails, origin, version and active state.
-- Visually distinguish kickoff, spawned and Role Builder roles.
-- Show persona/version diff and the run that caused self-adjustment.
-- Show birth timestamp and parent run for spawned roles.
-- Permit pause/resume, not destructive deletion.
-- Link to the Role Builder.
+The current client sends:
 
-### `/agents/new` — five-step Role Builder
+```json
+{"type":"prompt","data":"Build or maintain this repository..."}
+```
 
-Implement the exact wizard promised in `soul.md`:
+It may also send an envelope-shaped agent message:
 
-1. **Job:** one plain-language text box; generate a persona draft and allow editing.
-2. **Brain:** Fast, Balanced and Code-focused cards; preselect from job text.
-3. **Tools:** human-language checkboxes. Dangerous tools show warnings and require explicit opt-in.
-4. **Guardrails:** max spend, max seconds, critic approval, autonomous action and escalation trigger.
-5. **Test flight:** enqueue a `role_test`, stream its run, show output, then Activate.
+```json
+{
+  "type": "EVENT",
+  "src": "ui-observer",
+  "dst": "pm",
+  "ts": 1780000000000,
+  "payload": {"kind": "CHAT_MESSAGE", "text": "..."}
+}
+```
 
-Persist draft state between steps and page refreshes. Defaults must be safe: critic required, autonomous
-off, minimal tools, bounded time/cost. Step 1 calls `agents.createRoleDraft` and subscribes to its
-persona-draft task; step 5 calls `agents.startTestFlight`; Activate calls
-`agents.activateVersion` only for the unchanged passing draft hash. Never call the localhost runtime
-with a browser token and never edit YAML directly.
+Validate size, type, origin and rate. Convert accepted prompts into Member 2's canonical task draft,
+infer no dangerous permission, and require repository/mode/action confirmation through policy before
+live execution. Duplicate client messages must not create duplicate tasks.
 
-### `/reviews`
+### Frozen client messages to emit
 
-Show escalations and human-gated actions with the complete artifact chain. Provide:
+Support the direct event shapes the current Zustand store already consumes:
 
-- Approve.
-- Edit and approve, with a clear human-edited badge.
-- Reject with reason.
-- Open source issue/PR.
-- Compare proposed vs edited artifact.
+```text
+progress      { type, data }
+terminal      { type, data }
+file          { type, data:{filename,language,path} }
+token_usage   { type, data:{office,input_tokens,output_tokens,cost_usd,latency_s} }
+cost_update   { type, data }
+complete      { type, data, githubUrl?, projectName?, files? }
+error         { type, data }
+```
 
-Every rejection/edit explains that Member 2 will capture an eval candidate. Monetary, security,
-protected-path, release-publication and policy-write decisions remain clearly human-gated.
+Also support a versioned canonical envelope for tests and later clients:
 
-### `/evals`
+```text
+schemaVersion, eventId, type, src, dst, ts, sequence,
+taskId?, runId?, spanId?, payload, redactionLevel
+```
 
-- Current agent tag and threshold status.
-- v1→v4 pass-rate chart.
-- Triage, response and fix breakdown.
-- Repeated-run stability and latest three complete runs.
-- Case table with source, tags, scorer, result and linked failure trace.
-- Pending captured cases with approve/reject actions.
-- CI check/blocked-PR link.
-- Downloadable JSON report.
+Map structured agent/status fields to display text at the last projection step. Do not parse business
+state back out of prose or emojis.
 
-### `/alerts`
+### Gateway behavior
 
-- Rule editor for failure, cost spike, latency spike, escalation, lease expiry, model outage and eval
-  regression.
-- Firing log with timestamp, observed value, baseline, run link, severity and acknowledgement.
-- Voice toggle/test button.
-- Never synthesize or replay private issue content; use server-provided safe alert text.
+- Authenticate task-creating connections; allow an unauthenticated read-only demo stream only if
+  explicitly enabled and fully redacted.
+- Subscribe to Member 2's canonical cursor feed; never maintain an independent task/run database.
+- Keep a bounded in-memory connection buffer only; persist cursors through the control plane.
+- Include event ID and monotonic run sequence; dedupe repeats.
+- Reconnect upstream with exponential backoff/jitter; replay from `lastEventId` or request a snapshot.
+- Never replay mutation commands automatically after an ambiguous disconnect.
+- Send heartbeat and server time; close stale/oversized/rate-abusive clients.
+- Mark fixture, dry-run, degraded, replayed and live data explicitly.
+- Keep actual local/remote cost separate from cloud-equivalent cost.
+- Preserve adapter/base-model identity in terminal/diagnostic projections.
+- Emit completion only after Member 2 persists a terminal result URL; fixture runs never count.
 
-### `/models`
+### Wrapper/status compatibility
 
-- Current model processes, status, loaded/pinned state, slots and endpoint health.
-- RAM/VRAM utilization chart.
-- Load, request, completion and eviction timeline.
-- Cold-start versus generation latency.
-- Actual local/remote fallback indicator.
-- No fabricated GPU data when telemetry is unavailable; show `Unavailable` with reason.
+Expose a safe `/status` snapshot with wrapper ID/type/status/last-seen metadata and status values
+`IDLE`, `THINKING`, `WORKING`, `BLOCKED`. The current client contains inactive registration/status
+code; test the gateway endpoint and document the frozen-client limitation instead of claiming the
+canvas is live when it is not consuming that path.
 
-### `/policies`
+## LoRA/QLoRA strategy
 
-Render `triage.yaml`, `autonomy.yaml`, `escalation.yaml` and `voice.yaml` as understandable forms while
-preserving a raw YAML advanced view. Show stable rule IDs, active Git SHA, version history and diff.
-Validate draft through Member 2 before enabling Save. Saving creates a Git-backed audit trail.
+### What is being fine-tuned
 
-### `/prompts`
+Use one high-value adapter first: the Qwen3-4B triage/reply/docs family. It has repeated, structured,
+high-volume outputs and fits the fast lane. Do not spend the first training window on the Planner,
+Critic or code model.
 
-- List agent prompt/persona versions.
-- Edit draft, view diff, increment version.
-- Persist edits through `agents.createVersionDraft`; an active version remains immutable.
-- `Run Gauntlet before save` action with streamed status.
-- Start that run through `evalRuns.start` and subscribe by returned eval-run/task ID; do not call the
-  localhost protected endpoint from browser code.
-- Block activation when eval thresholds fail.
-- Link every active version to its Git tag/commit when available.
+- Keep Planner base-first so it generalizes across all three modes.
+- Keep Critic independent and never attach the same adapter that produced the output it judges.
+- Add a security-classification adapter only after the maintainer adapter passes and there is enough
+  reviewed security data.
+- Use prompts/RAG/policy for current repository facts, tools and safety. Fine-tuning is for behavior,
+  structure, tone and stable classification—not changing permissions or memorizing current facts.
 
-### `/settings`
+### QLoRA versus LoRA
 
-- Service health for Convex, Worker, runtime, model servers, GitHub, Linkup, ElevenLabs and Pages.
-- Global pause and write-back mode, with confirmation for moving to live mode.
-- Demo repository/allowlist shown read-only.
-- Show both onboarded repositories, connection/last-webhook state and active policy version; never
-  expose installation IDs or secrets.
-- Links to docs, Worker status and live GitHub repo.
+- Use QLoRA by default when GPU memory is constrained: load the trainable base through 4-bit
+  bitsandbytes and train standard PEFT LoRA weights.
+- Use ordinary BF16/FP16 LoRA only if the base model fits with safe headroom and is measurably faster or
+  more stable on the available machine.
+- Do not train from a GGUF file. Obtain the exact original Hugging Face base revision/tokenizer that
+  corresponds to the GGUF used by llama.cpp.
+- Export the selected PEFT adapter to a llama.cpp-compatible GGUF LoRA adapter, then load it separately
+  from the exact GGUF base. Do not merge it into the only copy of the base model.
 
-## Visual and interaction requirements
+Official implementation references:
 
-- Optimize for a 1440p projector, then 1024px laptop, then mobile status/review use.
-- Use semantic color plus icons/text; color alone cannot communicate pass/fail.
-- Support keyboard navigation and visible focus for every control.
-- Use accessible labels, dialogs, tabs and form errors.
-- Meet WCAG 2.1 AA contrast in the dashboard itself.
-- Use skeletons for loading, empty states for missing data and actionable error messages.
-- Preserve deep links across refreshes.
-- Avoid animation that delays comprehension; live DAG transitions should be subtle and optional.
-- Keep the active run legible at a distance: large state, elapsed time, cost and result.
-- Add a reduced-motion mode and respect OS preference.
+- [TRL PEFT integration](https://huggingface.co/docs/trl/main/en/peft_integration)
+- [PEFT LoRA configuration](https://huggingface.co/docs/peft/main/package_reference/lora)
+- [Transformers bitsandbytes/QLoRA guidance](https://huggingface.co/docs/transformers/quantization/bitsandbytes)
+- [llama.cpp LoRA/GGUF support](https://github.com/ggml-org/llama.cpp)
 
-## Voice and Wispr Flow
+### Starting training configuration
 
-### Voice assignment
+Treat these as the first reproducible sweep, not magic constants:
 
-1. Use `MediaRecorder` with explicit mic permission and recording state.
-2. Cap duration and show elapsed time.
-3. Send audio to Member 2's server-side transcription action.
-4. Display transcript for confirmation/editing.
-5. Convert to a task only after confirmation.
-6. Show the queued task immediately and link to its run.
+```text
+method: QLoRA SFT
+quantization: 4-bit NF4
+compute dtype: BF16 when supported, otherwise FP16
+double quantization: enabled for the QLoRA candidate
+target modules: all-linear candidate plus a narrower attention/MLP candidate
+rank: 16 and 32
+alpha: 32 and 64
+dropout: 0.05
+epochs: 1–3 with early stopping
+learning rate: small logged sweep; no manual untracked retuning
+packing: compare on/off for short examples
+seed: at least 3 evaluation seeds for the selected candidate
+```
 
-If mic or ElevenLabs is unavailable, the same text field remains fully functional.
+Log exact library versions, CUDA/backend, GPU, seed, sequence length, batch/accumulation, optimizer,
+scheduler, steps, checkpoints, peak VRAM, wall time and energy/cost estimate.
 
-### Voice alerts and standup
+## Dataset governance
 
-Subscribe to alert events. Request safe synthesized audio from Member 2 only when voice is enabled.
-Queue at most one playback at a time, allow mute, display the same text, and retain the alert in the
-log. Add a standup button that requests the daily digest text/audio and links each statistic to runs.
+### Allowed sources
 
-### Wispr Flow
+- reviewed public issues, PRs, maintainer replies and patches from allowlisted/licensed repositories;
+- team's own repository history and genuine corrections;
+- synthetic edge cases generated from schemas, then manually reviewed;
+- approved `pending-review` failures only after a human supplies the correct target;
+- public vulnerability fixtures designed for defensive testing.
 
-Wispr acts as OS-level dictation, so do not build a fake API integration. Ensure Role Builder job,
-prompt editor, policy fields, review edits and assignment text areas behave correctly with dictation:
-no keybinding traps, premature submission or aggressive auto-formatting. Member 3 captures the required
-usage screenshot and records where dictation was used during the live demo. The evidence is not
-complete until the Wispr stats screenshot visibly shows **at least 500 dictated words**. Capture one
-screenshot on day 1 evening and a fresh screenshot before judging; keep both timestamped originals in
-`evidence/power-ups/wispr/`.
+### Forbidden sources
 
-## Tauri desktop shell
+- secrets, tokens, private keys, raw secret findings or private issue content without explicit consent;
+- judge/live-demo inputs before evaluation;
+- held-out Gauntlet cases or their goldens;
+- unreviewed model-generated answers treated as truth;
+- code/text whose license or provenance is unknown;
+- exploit payloads intended for unauthorized systems.
+
+### Dataset record
+
+Each normalized JSONL record contains:
+
+```text
+exampleId, mode, taskType, repositoryGroup, sourceUrl?, sourceCommit?,
+license, provenance, collectedAt, reviewer, reviewStatus,
+input, expectedArtifactType, target, policyContext,
+safetyTags[], piiSecretScan, split, contentSha256
+```
+
+Redact identities not needed for the task. Store author login only when entity-memory behavior is the
+explicit evaluated feature and consent/policy allows it.
+
+### Split rules
+
+- Split by repository and issue/PR thread, never random message rows from the same conversation.
+- Keep a time-later test slice when history permits.
+- Freeze train/dev/test manifests with hashes before training.
+- Keep the entire final Gauntlet held out from all optimization, prompt selection and adapter training.
+- Deduplicate near-identical code/text across splits using normalized hashes plus similarity review.
+- Report per-mode, repository, language, severity and safety subgroup counts.
+
+## Training pipeline layout and commands
 
 Create:
 
 ```text
-apps/desktop/
-├─ package.json
-├─ src-tauri/
-│  ├─ Cargo.toml
-│  ├─ tauri.conf.json
-│  ├─ capabilities/
-│  └─ src/main.rs
-└─ README.md
+training/src/hermes_training/
+├─ prepare.py
+├─ redact.py
+├─ dedupe.py
+├─ split.py
+├─ validate.py
+├─ format_sft.py
+├─ train.py
+├─ sweep.py
+├─ export_peft.py
+├─ convert_gguf.py
+├─ model_card.py
+└─ manifest.py
 ```
 
-Wrap the same dashboard URL/build. Keep privileges minimal: normal window, safe external-link opening,
-optional tray status and no arbitrary shell command capability. Display connection health and fall back
-to the hosted Pages URL when the local dashboard is unavailable. The browser version remains the demo
-fallback and must have full feature parity.
+Required commands:
 
-## Public docs site
+```bash
+python -m hermes_training.prepare --config training/configs/triage.yaml
+python -m hermes_training.validate --manifest datasets/manifests/triage-v1.json
+python -m hermes_training.train --config training/configs/triage-qlora.yaml
+python -m hermes_training.export_peft --run <training-run-id>
+python -m hermes_training.convert_gguf --adapter <adapter-dir>
+python -m hermes_training.model_card --run <training-run-id>
+```
 
-Create `apps/docs/` as a lightweight static site deployable to Cloudflare Pages. It must include:
+Every output directory contains config, environment lock, dataset manifest hash, checkpoints, metrics,
+PEFT adapter, GGUF adapter when conversion succeeds, SHA-256 checksums and model card. Large weights are
+gitignored and stored in an approved local/artifact location; manifests remain in Git.
 
-- One-sentence product framing and architecture diagram.
-- Five-minute operator quickstart with screenshots.
-- How to assign work and interpret a run.
-- How to review an escalation.
-- Role Builder walkthrough.
-- Autonomy and hard-never policy explanation.
-- Privacy/on-device inference explanation.
-- Demo repository and live status links.
-- Honest limitations and emergency pause procedure.
-- Developer setup generated from Member 2's root commands.
+## Adapter promotion contract
 
-The Docs expert's docs-only GitHub write-back should be capable of updating this site, proving the
-second real surface.
+Supply Member 1 and Member 2:
 
-## Demo and evidence package
+```text
+adapterId, adapterVersion, adapterSha256, format,
+baseModelId, baseModelRevision, baseModelSha256, tokenizerSha256,
+targetRoles[], trainingRunId, datasetManifestSha256,
+lora{rank,alpha,dropout,targetModules}, quantization,
+trainMetrics, heldOutEvalReportSha256, benchmarkReportSha256,
+knownLimitations, rollbackTo, promotedBy, promotedAt
+```
 
-Own this structure:
+Promotion rules:
+
+1. exact base/tokenizer compatibility passes;
+2. adapter beats the frozen base on its primary metric by the declared meaningful margin;
+3. no hard safety, secret-leak, policy-following or critical subgroup regression;
+4. all existing maintainer thresholds still pass;
+5. fast lane remains under 60 seconds and memory fits the demo machine;
+6. three stable full evaluation runs pass for the final configuration;
+7. Member 1 loader smoke test and Member 2 atomic promotion test pass;
+8. rollback is demonstrated before live use.
+
+If the adapter fails, document it as an experiment and ship the base model. “We trained LoRA” is not a
+reason to deploy a regression.
+
+## Multi-mode Gauntlet
+
+You own cases, scorers, reports and threshold logic. Member 1 supplies execution hooks; Member 2 stores
+results and runs the blocking CI workflow.
+
+### Maintainer suite — minimum 40 core cases
+
+- 25 triage/dedupe cases: exact class, allowed label set, priority, duplicate link/threshold;
+- 8 response/clarification/docs cases: hard assertions plus held-out rubric;
+- 7 fix/repro cases: frozen repository snapshot and objective pre/post tests.
+
+### Builder suite — minimum 15 cases
+
+- 5 requirement/architecture cases with constraint and acceptance-criterion coverage;
+- 7 implementation cases across at least two languages/stacks, scored by compile/typecheck/tests;
+- 3 integration/package cases covering multi-file consistency, docs and build manifest.
+
+Score builder output by objective checks first: applies cleanly, builds, tests, meets requested behavior,
+contains no secret, stays within scope and supplies required artifacts. An LLM rubric may grade clarity
+or architecture only after hard checks pass.
+
+### Security suite — minimum 20 cases
+
+- known vulnerable dependencies with fixed advisory goldens;
+- true and false secret fixtures where raw values must never appear in reports;
+- SAST/configuration fixtures with known findings and deliberate false positives;
+- reachability/severity distinctions;
+- remediation cases where the fix must pass tests and rescan;
+- authorization fixtures proving the system refuses external/destructive scanning.
+
+Track precision, recall and F1 by severity/category, false-positive rate, secret-leak count, remediation
+success and unsupported-CVE-claim count. Any secret leak or unauthorized action is an automatic gate
+failure regardless of aggregate score.
+
+### Regression reports
+
+For every candidate compare on identical frozen cases:
+
+```text
+base model + v1 prompt
+base model + improved prompt/persona
+base model + LoRA/QLoRA candidate
+final selected model/prompt/adapter configuration
+```
+
+Report pass rate, per-mode/subgroup metrics, schema-valid rate, critic revise/escalation rate, token
+counts, latency, peak RAM/VRAM, cold/warm behavior and actual/provider cost. Keep seeds and case-set
+version identical across the comparison.
+
+Use the version story:
+
+- `agents-v1`: honest base/prompt baseline;
+- `agents-v2`: prompt/persona improvement;
+- `agents-v3`: QLoRA/LoRA candidate;
+- `agents-v4`: best validated configuration, which may be base-only if the adapter loses.
+
+## Closed-loop curation
+
+Member 2 captures failures, escalations and human corrections as `pending-review`. You:
+
+1. reproduce the failure against the frozen input/version;
+2. redact private/secret content;
+3. decide whether it is a product bug, policy bug, prompt bug, data candidate or eval-only edge case;
+4. obtain a human-authored/corroborated target;
+5. add it to a reviewed dataset or eval manifest—but never both sides of the same held-out comparison;
+6. record provenance, reviewer and rationale;
+7. send approved eval cases to Member 2 for audited Git commit.
+
+No automatic trace-to-training path is allowed. Model self-output is never silently used as a label.
+
+## Reliability and end-to-end acceptance
+
+Build deterministic fake runtime/control-plane streams first, then run the same suites against the live
+merged services.
+
+### Failure matrix
+
+Test:
+
+- malformed planner JSON and visible fallback;
+- model cold start, timeout, crash, adapter mismatch and base rollback;
+- duplicate/out-of-order/missing realtime events and cursor resync;
+- WebSocket disconnect during a task and reconnect without duplicate task creation;
+- Convex outage, outbox replay and expired lease;
+- GitHub rate limit, webhook replay, base-SHA conflict and partial write-back failure;
+- failed build/test/security scan and critic disagreement;
+- private/local-only task attempting cloud egress;
+- Linkup, Workers AI, Haiku and ElevenLabs outage;
+- secret finding, unsafe report text, attempted public disclosure and unauthorized scan;
+- global pause/emergency stop during concurrent work.
+
+### Performance matrix
+
+- ten consecutive warmed maintainer fast-lane runs;
+- cold and warm base-vs-adapter runs;
+- gateway event latency, reconnect/replay time and memory under a multi-run stream;
+- build mode on one small full-stack fixture;
+- security audit on at least two repositories/language ecosystems;
+- no training job competing with demo inference during evidence collection.
+
+### Frontend regression-only checks
+
+Without changing frontend code, verify the existing client can:
+
+- send a prompt and receive progress;
+- show agent/system messages and terminal output;
+- receive file/code artifacts where its current store supports them;
+- show token/cost events without fabricated values;
+- show the final GitHub/project URL;
+- reconnect without duplicating a task.
+
+Do not claim unimplemented `soul.md` management surfaces as complete evidence. Record any frozen-client
+gap honestly in the release checklist so the pitch and screenshots match the product that exists.
+
+## Evidence and documentation
+
+Maintain:
 
 ```text
 evidence/
@@ -515,242 +501,117 @@ evidence/
 ├─ screenshots/
 ├─ recordings/
 ├─ evals/
+├─ adapters/
+├─ security/
+├─ builds/
 ├─ alerts/
-├─ role-builder/
 ├─ power-ups/
 └─ rehearsal-log.md
 ```
 
-Record exact live URLs and IDs for:
+Evidence required:
 
-- Judge-authored issue fast-lane run.
-- Real green fix PR.
-- Different plan DAG pair.
-- Critic revise→pass run.
-- Spawned `rust-expert` run.
-- Blocked/escalated run.
-- Run diff pair.
-- Real alert firing.
-- v1→v4 eval chart and three ≥85% runs.
-- Genuinely CI-blocked PR.
-- Memory-aware second interaction.
-- Policy edit affecting the next run.
-- One genuine completed task from the second onboarded repository with isolated policy/memory.
-- Role Builder activation/test flight.
-- Convex/Cloudflare/Linkup/ElevenLabs/Wispr evidence.
+- real judge-authored maintainer task and real GitHub result URL;
+- green fix PR, critic revise→pass, spawn and escalation runs;
+- different plan DAGs for maintain/build/security modes;
+- one tested builder PR and build/test manifest;
+- one defensive vulnerability report plus separately approved remediation PR;
+- v1→v4 eval report and three stable final runs;
+- base-vs-LoRA report, adapter manifest/model card and rollback recording;
+- one honest alert, memory-aware interaction and policy effect;
+- actual Convex/Cloudflare/Linkup/ElevenLabs/Wispr proof where used;
+- latency/cost reports that distinguish local actual cost from cloud-equivalent cost.
 
-Use this exact power-up proof checklist; a logo or dependency alone is not evidence:
+Every evidence folder README names the task/run IDs, real URLs, capture time, commit SHA, versions and
+what the proof demonstrates. Label fixtures and rehearsals. Never present them as real completions.
 
-| Power-up | Required proof in `evidence/power-ups/` |
+Write operator/developer runbooks for:
+
+- starting Bun frontend plus all backend services;
+- configuring local models and promoted adapters;
+- maintainer, builder and security-audit mode usage;
+- repository consent/allowlist and data-egress controls;
+- interpreting a finding and creating a remediation PR;
+- running fast/full evals and reproducing reports;
+- adapter promotion/rollback;
+- emergency pause, offline fallback and demo recovery.
+
+## 36-hour execution plan
+
+| Hours | Owned outcome |
 |---|---|
-| Convex | schema/functions commit, live deployment URL, screenshot of real task/run/span/artifact rows, and the judged run ID visible in both dashboard and Convex |
-| Cloudflare | Worker and both Pages URLs, deployed commit SHAs, request-log screenshot for the judged webhook, and one recorded Workers AI fallback attempt/result |
-| Linkup | research span/artifact with query, retrieval time and source URL, plus the resulting GitHub reply containing the real citation |
-| ElevenLabs | recording of voice assignment → confirmed transcript → queued task, a spoken real alert, and daily standup audio/text with linked runs |
-| Wispr Flow | timestamped day-1 and pre-judging stats screenshots with the latter visibly at **≥500 words**, plus a recording of Role Builder dictation without manual retyping |
+| 0–4 | Quality repo skeleton, eval/task schemas, hardware/base-model audit, dataset governance, gateway protocol/fixture server |
+| 4–10 | Gateway prompt/event/reconnect path, `agents-v1` baseline, first maintainer cases, data ingest/redact/dedupe/split pipeline |
+| 10–18 | 40-case maintainer Gauntlet, builder/security suites, deterministic scorers, QLoRA smoke and full candidate run |
+| 18–26 | PEFT/GGUF export, model card/manifest, base-vs-adapter benchmarks, gateway live control-plane integration, failure matrix |
+| 26–30 | v2/v3/v4 comparisons, three final full runs, E2E/privacy/security/performance acceptance, promotion/rollback proof |
+| 30–34 | Shared integration across all three modes, real URLs/run IDs, documentation and evidence capture, blocker fixes |
+| 34–36 | Two timed rehearsals, fallback replay, frozen evidence index and demo/evaluation operations |
 
-Store a short `README.md` inside each provider folder naming the real run/task IDs, URLs, capture
-time, team member who captured it, and what the proof demonstrates. Redact secrets and private issue
-content; do not crop away timestamps, provider identity, or run linkage.
+## Required automated tests
 
-Never fabricate evidence. A fixture is acceptable for UI development but must be labelled fixture and
-must not appear in the final evidence folder as a real completion.
+### Data and training
 
-## Hour-by-hour execution plan
+- provenance/license/reviewer fields are mandatory;
+- secret/PII scanner blocks unsafe records;
+- split leakage and near-duplicate checks fail the pipeline;
+- training is reproducible from config/manifest/seed;
+- manifests and adapter outputs have verified hashes;
+- GGUF conversion/load smoke test uses the exact declared base.
 
-### Hours 0–2 — Shell, provider boundary and fixture screens
+### Evaluation
 
-- Scaffold dashboard, routing, design tokens, shell navigation and `DataProvider` interface.
-- Import Member 2's contracts or temporary exact fixtures.
-- Build fixture mode with one fast run, one deep run, one revision, one spawn, one escalation, one
-  eval regression and one alert.
-- Agree with Member 2 on query/mutation names and with Member 1 on artifact display names.
-- Scaffold docs and Tauri directories without waiting for final branding.
+- scorers are deterministic on fixed fixtures and return nonzero below thresholds;
+- hard build/test/security failures cannot be overridden by an LLM score;
+- Gauntlet is absent from training manifests;
+- base and adapter use identical case sets/seeds;
+- safety subgroup regressions and secret leaks block promotion;
+- reports preserve actual/equivalent cost and local/remote distinctions.
 
-**Handoff at hour 2:** a navigable fixture dashboard and list of missing contract fields.
+### Gateway
 
-### Hours 2–6 — Live vertical-slice dashboard
+- invalid/oversized/rate-abusive messages are rejected;
+- duplicate prompt IDs enqueue once;
+- event sequence gaps trigger replay/snapshot;
+- reconnect does not replay a mutation;
+- redaction prevents secrets/private fields in client messages;
+- fixture/dry-run events cannot become real-completion counters;
+- completion requires a persisted result URL.
 
-- Build overview, task list, run list, basic run detail, DAG and trace tree.
-- Connect Convex provider as soon as Member 2 exposes task/run/span/artifact queries.
-- Show the first real webhook task and deterministic runtime completion live.
-- Add result URL, pause switch and write-back mode indicator.
+### End-to-end modes
 
-**Exit test:** issue creation becomes a live queue item, run and GitHub result without refreshing.
+- maintainer issue becomes a useful reply/labels and one result URL;
+- builder brief becomes requirements, code, tests, security report and PR;
+- security audit produces normalized redacted findings and no mutation in read-only mode;
+- approved remediation produces a tested PR and rescan result;
+- global pause, lost lease, base conflict and provider outage degrade safely.
 
-### Hours 6–11 — Production trace and observability
+## Definition of done
 
-- Finish span drawer, artifact viewer, memory/policy display and GitHub audit.
-- Build search/filter, run compare, cost analytics and model timeline.
-- Make critic revise edges and spawned-agent birth visible.
-- Add bookmarked demo run support.
-
-### Hours 11–17 — Operator controls and Role Builder
-
-- Implement five-step Role Builder with safe defaults, test flight and activation.
-- Implement assignment composer, command/chat drawer, approved-backlog validation/release, review
-  queue and global/per-agent pause.
-- Implement policy and prompt editors with validation/diff/Gauntlet gate.
-- Rehearse the Role Builder once with a teammate who did not implement it and fix every hesitation.
-
-### Hours 17–22 — Evals, alerts and voice
-
-- Build eval dashboard and pending captured-case review.
-- Build alert rules/log and text/audio playback.
-- Implement microphone assignment confirmation flow and daily standup playback.
-- Test degraded text-only behavior with ElevenLabs disabled.
-- Ensure all relevant text fields work with Wispr dictation.
-
-### Hours 22–27 — Desktop, docs and Cloudflare Pages
-
-- Finish Tauri shell with minimal capabilities and hosted fallback.
-- Finish quickstart/operator docs and architecture/policy pages.
-- Deploy dashboard and docs with Member 2.
-- Add QR code linking to the demo issue form/repository.
-- Verify repository filters/settings and capture the second-repository real-task proof.
-- Test projector, laptop and phone layouts.
-
-### Hours 27–31 — Completeness and accessibility
-
-- Finish settings/health, empty/error states, downloadable evidence and all cross-links.
-- Run keyboard-only and contrast checks.
-- Verify every `soul.md` mentor question can be answered from a screen in under 15 seconds.
-- Conduct three non-engineer Role Builder rehearsals; record time and confusion points.
-- Fix copy/defaults rather than coaching the user.
-
-### Hours 31–34 — Integration freeze and evidence
-
-- Rebase on `integration`; switch production build to Convex mode.
-- Run dashboard/docs/desktop tests and root `pnpm build`/`pnpm test` with Member 2.
-- Capture exact run IDs, GitHub URLs, screenshots, eval reports, alert event and power-up evidence.
-- Verify both Wispr screenshots exist and the pre-judging statistic visibly exceeds 500 words.
-- Freeze navigation and layout; make only blocker fixes.
-- Cache a fixture replay of the full demo for network/model fallback, clearly labelled historical run.
-
-### Hours 34–36 — Full judged-demo rehearsal
-
-- Run the ten-minute script twice with the same screens/order used during judging.
-- Measure how long every navigation step takes.
-- Place bookmarked tabs, QR code and audio controls.
-- Verify browser fallback before Tauri.
-- During judging, you operate the dashboard and narration; Members 1 and 2 watch runtime/control health.
-
-## Required tests
-
-### Component and contract tests
-
-- Every shared fixture renders without runtime exceptions.
-- Unknown optional fields degrade gracefully; unknown schema versions show a clear incompatibility.
-- Formatting keeps actual and equivalent cost distinct.
-- Result URLs are safe external links.
-- Redacted artifacts never reveal hidden fields.
-
-### Live behavior
-
-- New task, span, artifact, alert and review records appear without refresh.
-- Active DAG nodes transition correctly.
-- Search and filters find bookmarked runs in under 15 seconds.
-- Compare aligns reordered spans by node/role.
-- Pause state and write-back mode update across open clients.
-- Backlog validation reasons render exactly; confirmation enqueues one batch and its live counters
-  reconcile with terminal GitHub result URLs.
-- The operator command/chat drawer uses live records for status and shares the normal assignment
-  confirmation path.
-
-### Role Builder and controls
-
-- The wizard preserves state and enforces safe defaults.
-- Dangerous tools require explicit confirmation.
-- Test flight streams a real or fixture run and activation persists the role.
-- Review approve/edit/reject creates the expected mutation and visible audit state.
-- Policy invalid draft cannot save; valid save shows resulting Git SHA/version.
-- Prompt activation blocks after failed Gauntlet.
-
-### Voice and fallback
-
-- Mic permission denial leaves text assignment intact.
-- Transcript requires confirmation before task creation.
-- Multiple alerts do not overlap audio.
-- Muting persists locally.
-- ElevenLabs outage produces a text alert and no unhandled error.
-- Wispr-compatible fields accept a 500+ word dictation session without accidental submit, lost text,
-  shortcut conflicts or destructive auto-formatting.
-
-### Accessibility and responsive behavior
-
-- Keyboard-only completion of assignment, review and Role Builder.
-- No critical automated accessibility violations on principal routes.
-- Focus returns correctly after dialogs/drawers.
-- Charts include accessible summaries and do not rely only on color.
-- Core overview/run/review functions work at 1024px and on a phone.
-- Reduced-motion setting disables nonessential transitions.
-
-### Build/deploy
-
-- Dashboard, docs and Tauri dev/build commands pass.
-- Cloudflare Pages URLs serve the expected commit.
-- Deep links survive direct navigation/refresh.
-- Tauri opens external GitHub/docs links safely.
-- Fixture and Convex production builds both succeed.
-
-## Mentor-question readiness matrix
-
-| Mentor question | Screen/action |
-|---|---|
-| Show a real completed task | Overview counter → GitHub result URL |
-| Show a past run | Runs search → run detail |
-| Who called whom? | Run detail trace tree/DAG |
-| What did this agent receive and produce? | Span drawer → artifact refs |
-| Which agent cost the most? | Runs analytics/cost-by-agent |
-| Why did one run fail and another pass? | Run compare bookmarked pair |
-| Did an alert really fire? | Alerts firing log and run link |
-| Did a role appear mid-run? | Spawn run → agent birth → registry |
-| Do agents revise each other? | Critic revise edge and notes |
-| What does Hermes remember? | Run memory pack, three labelled layers |
-| Does policy actually affect behavior? | Policy version/rule IDs in run |
-| Do failures improve evals? | Failure trace → pending case → CI run |
-| Can a non-engineer create a role? | Role Builder test flight |
-| Can the crew be stopped? | Global pause plus live state change |
-| Can it drain real work at volume? | Approved backlog batch → live drain → completed GitHub links |
-| What prevents dangerous actions? | Policy screen and write-back audit |
-| Is it really local/cheap? | Model timeline plus actual cost |
-
-## Member 3 definition of done
-
-- Every required route works with fixtures and live Convex data.
-- A judge can watch an issue become a plan, trace and real GitHub result without refresh.
-- Run detail exposes DAG, trace, artifacts, memory, policies, models, critic and write-back.
-- Search, analytics, diff and alerts answer the four observability mentor questions immediately.
-- Role Builder creates, tests and activates a working role in under ten minutes without coaching.
-- Review queue, assignment, pause, prompts and policy editing work.
-- Command/chat assignment and approved real-backlog release use the same audited task pipeline; the
-  completed counter excludes fixtures and non-terminal work.
-- Eval dashboard shows 40+ cases, version gains, repeated runs, captured failures and blocked CI.
-- ElevenLabs voice assignment, alert and standup work with safe text fallback.
-- Wispr dictation works in all promised fields and timestamped day-1/pre-judging evidence includes a
-  visible ≥500-word statistic.
-- Dashboard and docs are live on Cloudflare Pages; Tauri wraps the same experience.
-- Evidence folder contains real, linked, timestamped proof for every rubric and power-up claim.
-- Browser fallback can run the entire demo if Tauri fails.
+- Training/data pipeline is reproducible, governed, split-safe and free of committed large weights.
+- One QLoRA/LoRA candidate is trained, exported, model-carded and honestly compared to the base.
+- Promotion happens only if quality/safety/latency gates pass; rollback is demonstrated.
+- Critic stays independent and no adapter changes tools, policy or hard safety.
+- Maintainer, builder and security Gauntlets run locally and through Member 2's CI gate.
+- Gateway maps canonical events to the frozen client, handles reconnect/replay and never becomes truth.
+- The merged system completes one real acceptance run in each mode.
+- Security reports redact secrets, avoid unsupported claims and require separate consent for remediation.
+- Evidence contains real IDs, URLs, versions, manifests, reports and timestamps—no fabricated proof.
+- Two rehearsals complete with training stopped, models warm, fallbacks ready and navigation/demo order
+  frozen.
 
 ## Merge and handoff checklist
 
-1. Work on `member3/operator-ui`; never force-push after a checkpoint is consumed.
-2. Merge fixture-mode UI at hour 6, observability at hour 11, controls at hour 22, and final UI at
-   hour 31.
-3. Before each merge, run:
-
-   ```bash
-   pnpm --filter dashboard test
-   pnpm --filter dashboard build
-   pnpm --filter docs build
-   ```
-
-4. At hour 31 also run Tauri build/dev smoke testing on the demo machine.
-5. Do not edit contracts to satisfy the UI; report the exact missing field to Member 2 with a fixture.
-6. Do not calculate authoritative run totals in the browser when Member 2 provides canonical totals.
-7. Give Member 1 screenshots of any confusing artifact/span output so they can improve the producer.
-8. Give Member 2 the exact query/index bottleneck rather than implementing browser-side table scans.
-9. Final merge order is Member 2 root/contracts/control, Member 1 runtime, then your dashboard/docs/
-   desktop changes. Resolve only path/config conflicts with all three present.
-10. Validate from a clean browser profile with no cached auth, then repeat from the Tauri shell.
+1. Work on `member3/model-quality`; do not edit completed frontend presentation code.
+2. Freeze eval/event/adapter schemas with Members 1 and 2 at hour 4.
+3. Publish gateway fixtures and baseline report by hour 10.
+4. Publish candidate adapter + manifest + model card by hour 18–22; never pass an unverified path/hash.
+5. Member 1 must pass loader/telemetry/rollback tests before promotion.
+6. Member 2 must pass registry/CI/atomic pointer tests before promotion.
+7. Integrate at hours 10, 18, 26 and 30; do not force-push consumed reports/manifests.
+8. Any final model, prompt, policy, adapter, dataset or case-set change invalidates the three evidence
+   runs and requires rerunning them.
+9. Before final merge run training tests, full Gauntlet, gateway tests, E2E suites, Bun build/lint and
+   the two rehearsal scenarios.
+10. Hand the team one evidence index with exact links plus one fallback replay; do not rely on memory
+    during judging.
