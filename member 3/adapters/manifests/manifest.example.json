@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0",
+  "adapterId": "example-not-trained",
+  "adapterVersion": "0.0.0-example",
+  "adapterSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "format": "peft-safetensors",
+  "baseModelId": "Qwen/Qwen3-4B",
+  "baseModelRevision": "replace-with-verified-revision",
+  "baseModelSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "tokenizerSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "targetRoles": ["triage", "docs"],
+  "trainingRunId": "example-not-run",
+  "datasetManifestSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "lora": {
+    "rank": 16,
+    "alpha": 32,
+    "dropout": 0.05,
+    "targetModules": ["q_proj", "v_proj"]
+  },
+  "quantization": "4-bit-nf4-double-quant",
+  "trainMetrics": {},
+  "heldOutEvalReportSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "benchmarkReportSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "knownLimitations": ["Example schema only; not eligible for promotion."],
+  "rollbackTo": "base"
+}
+
