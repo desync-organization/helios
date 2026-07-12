@@ -54,7 +54,14 @@ def model_expert(manager: ModelManager, expert_name: str) -> ExpertHandler:
         if expert_name == "critic":
             if any(item.content.get("success") is False or item.content.get("safe") is False for item in context.upstream):
                 content.update({"verdict": "blocked", "notes": ["deterministic upstream gate failed"], "independent": True})
-            content["independent"] = True
+            reviewed = context.upstream[0] if context.upstream else None
+            content.update({
+                "independent": True,
+                "reviewedArtifactId": reviewed.artifact_id if reviewed else "",
+                "reviewedContentHash": reviewed.content_hash if reviewed else "",
+                "producerAgent": reviewed.producer if reviewed else "unknown",
+                "criticAgent": "critic",
+            })
         return content
     return run
 

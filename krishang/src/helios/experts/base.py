@@ -96,11 +96,18 @@ async def deterministic_expert(context: ExpertContext) -> dict[str, Any]:
     if output == ArtifactType.CRITIC_VERDICT:
         failed = [item for item in context.upstream if item.content.get("success") is False or item.content.get("safe") is False]
         unanswered = [decision for item in context.upstream for decision in item.content.get("unansweredDecisions", [])]
+        reviewed = context.upstream[0] if context.upstream else None
+        review_identity = {
+            "reviewedArtifactId": reviewed.artifact_id if reviewed else "",
+            "reviewedContentHash": reviewed.content_hash if reviewed else "",
+            "producerAgent": reviewed.producer if reviewed else "unknown",
+            "criticAgent": "critic",
+        }
         if failed:
-            return {**base, "verdict": "revise", "notes": ["deterministic gate failed"], "independent": True}
+            return {**base, **review_identity, "verdict": "revise", "notes": ["deterministic gate failed"], "independent": True}
         if unanswered:
-            return {**base, "verdict": "blocked", "notes": [f"human decision required: {item}" for item in unanswered], "independent": True}
-        return {**base, "verdict": "pass", "notes": context.revision_notes, "independent": True}
+            return {**base, **review_identity, "verdict": "blocked", "notes": [f"human decision required: {item}" for item in unanswered], "independent": True}
+        return {**base, **review_identity, "verdict": "pass", "notes": context.revision_notes, "independent": True}
     if output == ArtifactType.WRITEBACK_INTENT:
         critic = next((item for item in context.upstream if item.artifact_type == ArtifactType.CRITIC_VERDICT), None)
         if not critic or critic.content.get("verdict") != "pass":
@@ -117,5 +124,7 @@ async def deterministic_expert(context: ExpertContext) -> dict[str, Any]:
         if task.task_type.value == "release":
             action = "draft_release"
         return {**base, "authorized": True, "action": action, "credentialFree": True,
-                "publishRelease": False, "deploy": False, "idempotencyKey": f"{task.task_id}:{action}"}
+                "publishRelease": False, "deploy": False, "idempotencyKey": f"{task.task_id}:{action}",
+                "issueNumber": task.metadata.get("issueNumber"),
+                "pullNumber": task.metadata.get("pullNumber")}
     return {**base, "status": "complete"}

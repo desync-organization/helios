@@ -38,8 +38,11 @@ class HeliosRuntime:
         if self.settings.convex_http_url:
             if not self.settings.helios_runtime_token:
                 raise ValueError("HELIOS_RUNTIME_TOKEN is required with CONVEX_HTTP_URL")
-        return ConvexHttpControlPlane(self.settings.convex_http_url, self.settings.helios_runtime_token,
-                                      outbox=IdempotentOutbox(self.settings.helios_outbox_path))
+            return ConvexHttpControlPlane(
+                self.settings.convex_http_url,
+                self.settings.helios_runtime_token,
+                outbox=IdempotentOutbox(self.settings.helios_outbox_path),
+            )
         return InMemoryControlPlane()
 
     async def process_once(self) -> bool:

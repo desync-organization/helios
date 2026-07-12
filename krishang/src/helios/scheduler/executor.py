@@ -154,12 +154,12 @@ class Scheduler:
                 await self.control_plane.submit_intent(lease_id, intent)
             status = "completed" if intent and intent.content.get("authorized") else "escalated"
             latency_ms = (time.perf_counter() - run_started) * 1000
+            events.append(await self._event("run_finished", task, run_id, {"status": status}))
             await self.control_plane.finish_run(run_id, {"status": status, "intentId": intent.artifact_id if intent else None,
                                                          "latencyMs": latency_ms, "actualCostUsd": total_cost})
-            events.append(await self._event("run_finished", task, run_id, {"status": status}))
             return ExecutionResult(run_id=run_id, status=status, artifacts=artifacts, intent=intent,
                                    events=events, latency_ms=latency_ms, actual_cost_usd=total_cost)
         except Exception as exc:
-            await self.control_plane.finish_run(run_id, {"status": "failed", "error": str(exc)[:500]})
             events.append(await self._event("run_failed", task, run_id, {"error": str(exc)[:500]}))
+            await self.control_plane.finish_run(run_id, {"status": "failed", "error": str(exc)[:500]})
             raise

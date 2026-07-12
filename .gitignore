@@ -23,6 +23,8 @@ pnpm-debug.log*
 next-env.d.ts
 
 models/
+!krishang/src/helios/models/
+!krishang/src/helios/models/**
 
 # Member 2 local service state and credentials
 /Member 2/.dev.vars
