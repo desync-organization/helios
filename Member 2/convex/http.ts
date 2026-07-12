@@ -7,7 +7,15 @@ const http = httpRouter();
 function json(value: unknown, status = 200, headers?: HeadersInit): Response { return Response.json(value, { status, headers }); }
 function error(status: number, code: string, message: string, retryable = false, headers?: HeadersInit): Response { return json({ error: { code, message, retryable } }, status, headers); }
 function constantTimeEqual(left: string, right: string): boolean { const length = Math.max(left.length, right.length, 1); let difference = left.length ^ right.length; for (let i = 0; i < length; i += 1) difference |= (left.charCodeAt(i) || 0) ^ (right.charCodeAt(i) || 0); return difference === 0; }
-function authorized(request: Request, name: "CONTROL_PLANE_INGEST_TOKEN" | "RUNTIME_BEARER_TOKEN" | "GATEWAY_BEARER_TOKEN"): boolean { const expected = process.env[name] ?? ""; const header = request.headers.get("Authorization") ?? ""; return expected.length >= 32 && header.startsWith("Bearer ") && constantTimeEqual(header.slice(7), expected); }
+function authorized(request: Request, name: "CONTROL_PLANE_INGEST_TOKEN" | "RUNTIME_BEARER_TOKEN" | "GATEWAY_BEARER_TOKEN"): boolean {
+    const expected = name === "CONTROL_PLANE_INGEST_TOKEN"
+        ? process.env.CONTROL_PLANE_INGEST_TOKEN ?? ""
+        : name === "RUNTIME_BEARER_TOKEN"
+            ? process.env.RUNTIME_BEARER_TOKEN ?? ""
+            : process.env.GATEWAY_BEARER_TOKEN ?? "";
+    const header = request.headers.get("Authorization") ?? "";
+    return expected.length >= 32 && header.startsWith("Bearer ") && constantTimeEqual(header.slice(7), expected);
+}
 async function body(request: Request, maximumBytes = 512_000): Promise<any> { const declared = Number(request.headers.get("Content-Length") ?? "0"); if (declared > maximumBytes) throw new RangeError("TOO_LARGE"); const raw = await request.arrayBuffer(); if (raw.byteLength > maximumBytes) throw new RangeError("TOO_LARGE"); return JSON.parse(new TextDecoder().decode(raw)); }
 async function sha256(value: string): Promise<string> { const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)); return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
 function newDomainId(prefix: string): string { return `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, 26).toUpperCase()}`; }
