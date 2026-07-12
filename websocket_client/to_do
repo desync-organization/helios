@@ -1,0 +1,17 @@
+Add a WebSocket client in frontend
+
+Subscribe to:
+
+wrapper list
+
+status changes
+
+
+
+
+UI MVP :
+Each wrapper = a node
+
+Color by status
+
+Auto-update on heartbeat
