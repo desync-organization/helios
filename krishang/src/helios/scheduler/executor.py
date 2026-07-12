@@ -37,16 +37,18 @@ class Scheduler:
         self.artifact_store = artifact_store
         self.experts = experts
         self.semaphore = asyncio.Semaphore(max_parallel)
+        self.event_lock = asyncio.Lock()
         self.cache = cache
         self.sequence = 0
 
     async def _event(self, event_type: str, task: NormalizedTask, run_id: str, payload: dict[str, Any],
                      span_id: str | None = None) -> CanonicalEvent:
-        self.sequence += 1
-        event = CanonicalEvent(type=event_type, task_id=task.task_id, run_id=run_id, span_id=span_id,
-                               sequence=self.sequence, payload=redact(payload))
-        await self.control_plane.emit_event(event)
-        return event
+        async with self.event_lock:
+            self.sequence += 1
+            event = CanonicalEvent(type=event_type, task_id=task.task_id, run_id=run_id, span_id=span_id,
+                                   sequence=self.sequence, payload=redact(payload))
+            await self.control_plane.emit_event(event)
+            return event
 
     async def _run_node(self, task: NormalizedTask, run_id: str, node: PlanNode,
                         artifacts: dict[str, Artifact], revision_notes: list[str]) -> tuple[Artifact, Span, list[CanonicalEvent]]:

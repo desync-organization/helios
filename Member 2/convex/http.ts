@@ -55,7 +55,7 @@ function runtimeTask(claimed: any, repository: any, memoryPack: any): Record<str
     },
     memoryPack: Array.isArray(memoryPack) ? { items: memoryPack } : memoryPack ?? {},
     policyPack: { version: claimed.policyVersion, allowedActions: claimed.consentScope?.allowedActions ?? [] },
-    metadata: { issueNumber, pullNumber, sourceUrl: claimed.source?.sourceUrl ?? payload.sourceUrl, dataClassification: claimed.dataClassification },
+    metadata: { issueNumber, pullNumber, sourceUrl: claimed.source?.sourceUrl ?? payload.sourceUrl, dataClassification: claimed.dataClassification, proposedFiles: payload.proposedFiles ?? [], testCommands: payload.testCommands ?? [] },
     createdAt: new Date(claimed.createdAt).toISOString(),
   };
 }

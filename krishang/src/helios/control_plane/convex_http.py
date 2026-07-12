@@ -190,14 +190,40 @@ class ConvexHttpControlPlane(ControlPlane):
         if not reviewed or critic.content.get("reviewedContentHash") != reviewed.content_hash:
             raise ValueError("critic did not review a known exact artifact")
         action = str(intent.content.get("action", ""))
-        comment = _comment_payload(action, intent, task, reviewed)
+        if action in {"issue_update", "review_comment"}:
+            external_action = "comment"
+            payload = {"action": external_action, "data": _comment_payload(action, intent, task, reviewed)}
+        elif action == "branch_pr":
+            files = reviewed.content.get("files")
+            if not isinstance(files, list) or not files:
+                raise ValueError("branch write-back requires at least one critic-approved file")
+            normalized_files = [
+                {"path": str(item["path"]), "content": str(item["content"]), "encoding": "utf-8"}
+                for item in files if isinstance(item, dict) and item.get("path") and "content" in item
+            ]
+            if not normalized_files:
+                raise ValueError("branch write-back has no valid critic-approved files")
+            external_action = "build_branch_and_pr"
+            branch_suffix = task.task_id.split("_", 1)[-1].lower()[:20]
+            payload = {
+                "action": external_action,
+                "data": {
+                    "branch": f"hermes/task-{branch_suffix}",
+                    "title": task.title[:256],
+                    "body": f"Automated draft for task `{task.task_id}`.\n\n{task.body}"[:128_000],
+                    "files": normalized_files,
+                    "draft": True,
+                },
+            }
+        else:
+            raise ValueError(f"connector action {action!r} is not implemented")
         writeback = {
             "schemaVersion": 1,
             "writebackId": new_id("writeback"),
             "taskId": task.task_id,
             "runId": intent.run_id,
             "repo": task.repository,
-            "action": "comment",
+            "action": external_action,
             "idempotencyKey": str(intent.content.get("idempotencyKey") or f"{task.task_id}:comment"),
             "leaseToken": state["token"],
             "artifactId": reviewed.artifact_id,
@@ -209,10 +235,8 @@ class ConvexHttpControlPlane(ControlPlane):
             "testsPassed": True,
             "breakingChange": False,
             "requestedAt": _epoch_ms(),
-            "payload": {
-                "action": "comment",
-                "data": comment,
-            },
+            "payload": payload,
+            **({"baseSha": task.base_sha} if task.base_sha and set(task.base_sha) != {"0"} else {}),
         }
         value = await self._request("POST", "/runtime/writeback", {
             "intent": writeback,

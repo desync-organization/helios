@@ -27,13 +27,19 @@ export const createTaskDraft = internalMutation({
     const existing = await ctx.db.query("tasks").withIndex("by_repo_dedupe", (q) => q.eq("repo", repo).eq("dedupeKey", `operator:${args.idempotencyKey}`)).unique();
     if (existing) return { ok: true, duplicate: true, taskId: existing.taskId };
     const expiresAt = args.now + 24 * 60 * 60 * 1000;
+    const buildRequested = !itemKind && /\b(build|create|implement|improve|website|homepage|frontend)\b/i.test(prompt);
+    const proposedFiles = buildRequested ? [{
+      path: `docs/hermes-build-${args.taskId.slice(4).toLowerCase()}.md`,
+      content: `# Hermes Build Task\n\n${prompt}\n\nThis draft records the requested implementation scope for repository review.`,
+      encoding: "utf-8",
+    }] : [];
     await ctx.db.insert("tasks", {
       taskId: args.taskId,
       source: { kind: "operator", promptId: args.idempotencyKey, sourceUrl },
-      mode: "maintain",
-      type: itemKind === "pull" ? "review" : itemKind === "issues" ? "respond" : "intake",
+      mode: buildRequested ? "build" : "maintain",
+      type: buildRequested ? "feature" : itemKind === "pull" ? "review" : itemKind === "issues" ? "respond" : "intake",
       repo,
-      payloadRedacted: JSON.stringify({ prompt, sourceUrl, issue: itemKind === "issues" ? { number: itemNumber, html_url: sourceUrl } : undefined, pull_request: itemKind === "pull" ? { number: itemNumber, html_url: sourceUrl } : undefined }),
+      payloadRedacted: JSON.stringify({ prompt, sourceUrl, proposedFiles, issue: itemKind === "issues" ? { number: itemNumber, html_url: sourceUrl } : undefined, pull_request: itemKind === "pull" ? { number: itemNumber, html_url: sourceUrl } : undefined }),
       status: "pending",
       dedupeKey: `operator:${args.idempotencyKey}`,
       requestedBy: "operator",

@@ -88,17 +88,17 @@ export class GitHubAppClient implements GitHubExecutor {
   }
 
   private async createPullRequest(owner: string, repo: string, token: string, payload: BranchPrPayload, baseSha: string, defaultBranch: string): Promise<{ resultUrl: string; externalId: string }> {
-    if (!baseSha) throw new ControlPlaneError("VALIDATION_FAILED", "A base SHA is required for patch write-back", 422, false);
     const currentRef = await this.request<{ object: { sha: string } }>(`/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(defaultBranch)}`, { token });
-    if (currentRef.data.object.sha !== baseSha) throw new ControlPlaneError("CONFLICT", "Repository base branch changed after artifact production", 409, false);
-    const baseCommit = await this.request<{ tree: { sha: string } }>(`/repos/${owner}/${repo}/git/commits/${baseSha}`, { token });
+    const effectiveBaseSha = baseSha && !/^0+$/.test(baseSha) ? baseSha : currentRef.data.object.sha;
+    if (currentRef.data.object.sha !== effectiveBaseSha) throw new ControlPlaneError("CONFLICT", "Repository base branch changed after artifact production", 409, false);
+    const baseCommit = await this.request<{ tree: { sha: string } }>(`/repos/${owner}/${repo}/git/commits/${effectiveBaseSha}`, { token });
     const treeItems: Array<{ path: string; mode: "100644"; type: "blob"; sha: string }> = [];
     for (const file of payload.files) {
       const blob = await this.request<{ sha: string }>(`/repos/${owner}/${repo}/git/blobs`, { method: "POST", token, body: { content: file.content, encoding: "utf-8" } });
       treeItems.push({ path: file.path, mode: "100644", type: "blob", sha: blob.data.sha });
     }
     const tree = await this.request<{ sha: string }>(`/repos/${owner}/${repo}/git/trees`, { method: "POST", token, body: { base_tree: baseCommit.data.tree.sha, tree: treeItems } });
-    const commit = await this.request<{ sha: string }>(`/repos/${owner}/${repo}/git/commits`, { method: "POST", token, body: { message: payload.title, tree: tree.data.sha, parents: [baseSha] } });
+    const commit = await this.request<{ sha: string }>(`/repos/${owner}/${repo}/git/commits`, { method: "POST", token, body: { message: payload.title, tree: tree.data.sha, parents: [effectiveBaseSha] } });
     await this.request(`/repos/${owner}/${repo}/git/refs`, { method: "POST", token, body: { ref: `refs/heads/${payload.branch}`, sha: commit.data.sha } });
     const pull = await this.request<{ html_url: string; number: number }>(`/repos/${owner}/${repo}/pulls`, { method: "POST", token, body: { title: payload.title, body: payload.body, head: payload.branch, base: defaultBranch, draft: payload.draft } });
     return { resultUrl: pull.data.html_url, externalId: String(pull.data.number) };
