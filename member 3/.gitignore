@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.py[cod]
+dist/
+build/
+*.egg-info/
+training/runs/
+training/checkpoints/
+adapters/weights/
+adapters/**/*.bin
+adapters/**/*.safetensors
+adapters/**/*.gguf
+evals/reports/*.json
+benchmarks/reports/*.json
