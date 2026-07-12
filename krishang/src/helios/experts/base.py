@@ -53,12 +53,16 @@ async def deterministic_expert(context: ExpertContext) -> dict[str, Any]:
                 "command": task.metadata.get("reproCommand", "repository-declared test command"),
                 "before": "failed", "smallestFailingCase": task.title}
     if output == ArtifactType.PATCH:
+        owner = task.metadata.get("proposedOwner")
+        files = task.metadata.get("proposedFiles", []) if not owner or owner == context.node.expert else []
         return {**base, "format": "structured-patch", "baseSha": task.base_sha,
-                "files": task.metadata.get("proposedFiles", []), "completeFiles": True,
+                "files": files, "completeFiles": True,
                 "protectedPathsTouched": False}
     if output == ArtifactType.TEST_RESULT:
-        return {**base, "success": True, "before": "failed", "after": "passed",
-                "commands": task.metadata.get("testCommands", ["repository-declared test suite"]), "fabricated": False}
+        results = task.metadata.get("testResults", [])
+        success = (bool(results) and all(item.get("success") is True for item in results)) or task.source != "github"
+        return {**base, "success": success, "before": "not_run", "after": "passed" if success else "failed",
+                "commands": task.metadata.get("testCommands", []), "results": results, "fabricated": not bool(results)}
     if output == ArtifactType.SECURITY_REPORT:
         return {**base, "findings": [], "secretsRedacted": True, "safe": True,
                 "limitations": task.metadata.get("securityLimitations", [])}

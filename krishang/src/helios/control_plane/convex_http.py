@@ -217,6 +217,7 @@ class ConvexHttpControlPlane(ControlPlane):
             }
         else:
             raise ValueError(f"connector action {action!r} is not implemented")
+        requires_quality_gates = action == "branch_pr"
         writeback = {
             "schemaVersion": 1,
             "writebackId": new_id("writeback"),
@@ -230,9 +231,9 @@ class ConvexHttpControlPlane(ControlPlane):
             "artifactHash": reviewed.content_hash,
             "criticArtifactId": critic.artifact_id,
             "policyRuleIds": intent.policy_ids or ["runtime.credential-free"],
-            "requiredChecksPassed": True,
-            "securityChecksPassed": True,
-            "testsPassed": True,
+            "requiredChecksPassed": not requires_quality_gates or self._quality_gate(reviewed, "testResults"),
+            "securityChecksPassed": not requires_quality_gates or self._quality_gate(reviewed, "securityResults", allow_empty=True),
+            "testsPassed": not requires_quality_gates or self._quality_gate(reviewed, "testResults"),
             "breakingChange": False,
             "requestedAt": _epoch_ms(),
             "payload": payload,
@@ -246,6 +247,18 @@ class ConvexHttpControlPlane(ControlPlane):
         if not isinstance(result_url, str) or not result_url.startswith("https://"):
             raise ValueError("write-back did not return a persisted HTTPS result URL")
         self._result_urls.setdefault(intent.run_id, []).append(result_url)
+
+    @staticmethod
+    def _quality_gate(artifact: Artifact, key: str, *, allow_empty: bool = False) -> bool:
+        records = artifact.content.get(key, [])
+        if not isinstance(records, list) or (not records and not allow_empty):
+            return False
+        for record in records:
+            if not isinstance(record, dict):
+                return False
+            if record.get("success") is False or record.get("safe") is False:
+                return False
+        return True
 
     async def _ensure_run(self, task_id: str, run_id: str, started_at: datetime) -> None:
         if run_id in self._started_runs:

@@ -12,7 +12,7 @@ from helios.models import ModelManager, default_model_registry
 from helios.planning import PlanPolicy, Planner
 from helios.planning.model_generator import LlamaPlanGenerator
 from helios.scheduler import Scheduler
-from helios.workspace import ArtifactStore, RepositoryNamespace
+from helios.workspace import ArtifactStore, RepositoryNamespace, prepare_repository_build
 
 
 DEFAULT_TOOLS = {"repo:read", "workspace:write", "command:test", "command:cargo", "scanner:local", "research:proxy"}
@@ -79,6 +79,25 @@ class HeliosRuntime:
         task = lease.task
         task.assert_authorized()
         namespace = RepositoryNamespace(self.settings.helios_workspace_root, task.repository, task.task_id).create()
+        if (
+            task.mode.value == "build"
+            and task.source == "github"
+            and str(task.metadata.get("sourceUrl", "")).startswith("https://github.com/")
+            and not task.metadata.get("proposedFiles")
+        ):
+            preparation = asyncio.create_task(
+                prepare_repository_build(task, namespace.root),
+                name=f"helios-prepare-{task.task_id}",
+            )
+            preparation_heartbeat = asyncio.create_task(
+                self._heartbeat(lease.lease_id, preparation),
+                name=f"helios-prepare-heartbeat-{task.task_id}",
+            )
+            try:
+                await preparation
+            finally:
+                preparation_heartbeat.cancel()
+                await asyncio.gather(preparation_heartbeat, return_exceptions=True)
         plan, events = await self.planner.create_plan(task)
         for event in events:
             await self.control_plane.emit_event(event)

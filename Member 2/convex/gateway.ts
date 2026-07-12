@@ -28,11 +28,7 @@ export const createTaskDraft = internalMutation({
     if (existing) return { ok: true, duplicate: true, taskId: existing.taskId };
     const expiresAt = args.now + 24 * 60 * 60 * 1000;
     const buildRequested = !itemKind && /\b(build|create|implement|improve|website|homepage|frontend)\b/i.test(prompt);
-    const proposedFiles = buildRequested ? [{
-      path: `docs/hermes-build-${args.taskId.slice(4).toLowerCase()}.md`,
-      content: `# Hermes Build Task\n\n${prompt}\n\nThis draft records the requested implementation scope for repository review.`,
-      encoding: "utf-8",
-    }] : [];
+    const proposedFiles: Array<{ path: string; content: string; encoding: string }> = [];
     await ctx.db.insert("tasks", {
       taskId: args.taskId,
       source: { kind: "operator", promptId: args.idempotencyKey, sourceUrl },
