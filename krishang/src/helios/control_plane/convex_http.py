@@ -20,6 +20,33 @@ def _iso_from_ms(value: int) -> datetime:
     return datetime.fromtimestamp(value / 1000, tz=UTC)
 
 
+def _comment_payload(action: str, intent: Artifact, task: NormalizedTask,
+                     reviewed: Artifact) -> dict[str, Any]:
+    if action == "issue_update":
+        target_number = intent.content.get("issueNumber") or task.metadata.get("issueNumber")
+        body = reviewed.content.get("body")
+        target_label = "issue"
+    elif action == "review_comment":
+        target_number = intent.content.get("pullNumber") or task.metadata.get("pullNumber")
+        summary = reviewed.content.get("summary")
+        findings = reviewed.content.get("findings")
+        finding_lines = [f"- {item}" for item in findings] if isinstance(findings, list) else []
+        body = "\n".join([
+            "## Hermes PR review",
+            "",
+            str(summary or "Review completed against the configured policy and security gates."),
+            *( ["", "### Findings", *finding_lines] if finding_lines else [] ),
+        ])
+        target_label = "pull request"
+    else:
+        raise ValueError(f"connector action {action!r} is not implemented")
+    if not isinstance(target_number, int) or target_number <= 0:
+        raise ValueError(f"{target_label} write-back requires a positive number")
+    if not isinstance(body, str) or not body.strip():
+        raise ValueError(f"{target_label} write-back requires critic-approved review text")
+    return {"issueNumber": target_number, "body": body.strip()}
+
+
 class ConvexHttpControlPlane(ControlPlane):
     """Adapter for the Member 2 Worker/Convex HTTP contracts.
 
@@ -163,14 +190,7 @@ class ConvexHttpControlPlane(ControlPlane):
         if not reviewed or critic.content.get("reviewedContentHash") != reviewed.content_hash:
             raise ValueError("critic did not review a known exact artifact")
         action = str(intent.content.get("action", ""))
-        if action != "issue_update":
-            raise ValueError(f"connector action {action!r} is not implemented in the issue vertical slice")
-        issue_number = intent.content.get("issueNumber") or task.metadata.get("issueNumber")
-        if not isinstance(issue_number, int) or issue_number <= 0:
-            raise ValueError("issue write-back requires a positive issue number")
-        body = reviewed.content.get("body")
-        if not isinstance(body, str) or not body.strip():
-            raise ValueError("issue write-back requires a critic-approved reply body")
+        comment = _comment_payload(action, intent, task, reviewed)
         writeback = {
             "schemaVersion": 1,
             "writebackId": new_id("writeback"),
@@ -191,7 +211,7 @@ class ConvexHttpControlPlane(ControlPlane):
             "requestedAt": _epoch_ms(),
             "payload": {
                 "action": "comment",
-                "data": {"issueNumber": issue_number, "body": body.strip()},
+                "data": comment,
             },
         }
         value = await self._request("POST", "/runtime/writeback", {

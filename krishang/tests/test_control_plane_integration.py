@@ -6,7 +6,7 @@ import httpx
 from helios.config import Settings
 from helios.contracts import Artifact, ArtifactType, CanonicalEvent
 from helios.control_plane import InMemoryControlPlane
-from helios.control_plane.convex_http import ConvexHttpControlPlane
+from helios.control_plane.convex_http import ConvexHttpControlPlane, _comment_payload
 from helios.ids import new_id
 from helios.runtime import HeliosRuntime
 
@@ -31,6 +31,28 @@ def test_generated_ids_match_control_plane_contracts():
     }
     for kind, pattern in patterns.items():
         assert re.fullmatch(pattern, new_id(kind))
+
+
+def test_pr_review_intent_becomes_a_critic_approved_pr_comment(maintain_task):
+    task = maintain_task.model_copy(update={"metadata": {"pullNumber": 42}})
+    review = Artifact.create(
+        task_id=task.task_id,
+        run_id=new_id("run"),
+        artifact_type=ArtifactType.REVIEW_NOTES,
+        producer="backend",
+        content={"summary": "Two gates passed.", "findings": ["Add a regression test."]},
+    )
+    intent = Artifact.create(
+        task_id=task.task_id,
+        run_id=review.run_id,
+        artifact_type=ArtifactType.WRITEBACK_INTENT,
+        producer="intent",
+        content={"authorized": True, "action": "review_comment", "pullNumber": 42},
+    )
+    assert _comment_payload("review_comment", intent, task, review) == {
+        "issueNumber": 42,
+        "body": "## Hermes PR review\n\nTwo gates passed.\n\n### Findings\n- Add a regression test.",
+    }
 
 
 async def test_http_adapter_bridges_issue_reply_to_member2_writeback(maintain_task):
