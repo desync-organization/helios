@@ -3,6 +3,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from helios.agency.head import HeadOrchestratorValidator
+from helios.agency.reservoir import AgentReservoir
 from helios.contracts import Artifact, ArtifactType, CanonicalEvent, NormalizedTask, Plan, Span
 from helios.contracts.plan import NodeKind, PlanNode
 from helios.control_plane import ControlPlane, LeaseLost
@@ -32,13 +34,16 @@ class ExecutionResult:
 class Scheduler:
     def __init__(self, *, control_plane: ControlPlane, artifact_store: ArtifactStore,
                  experts: dict[str, ExpertHandler], max_parallel: int = 3,
-                 cache: LocalRunCache | None = None) -> None:
+                 cache: LocalRunCache | None = None,
+                 reservoir: AgentReservoir | None = None) -> None:
         self.control_plane = control_plane
         self.artifact_store = artifact_store
         self.experts = experts
         self.semaphore = asyncio.Semaphore(max_parallel)
         self.event_lock = asyncio.Lock()
         self.cache = cache
+        self.reservoir = reservoir
+        self.head_validator = HeadOrchestratorValidator()
         self.sequence = 0
 
     async def _event(self, event_type: str, task: NormalizedTask, run_id: str, payload: dict[str, Any],
@@ -53,13 +58,34 @@ class Scheduler:
     async def _run_node(self, task: NormalizedTask, run_id: str, node: PlanNode,
                         artifacts: dict[str, Artifact], revision_notes: list[str]) -> tuple[Artifact, Span, list[CanonicalEvent]]:
         handler = self.experts.get(node.expert)
+        spawn_event: CanonicalEvent | None = None
+        if not handler and node.spawn and self.reservoir:
+            _, spawn_event = self.reservoir.spawn(
+                node.spawn,
+                run_id=run_id,
+                budget_tokens=node.budget.max_tokens,
+                budget_seconds=node.budget.max_seconds,
+                allowed_tools=set(node.tool_grants),
+            )
+            handler = self.reservoir.handler(node.expert)
+            if handler:
+                self.experts[node.expert] = handler
         if not handler:
             raise ValueError(f"no handler registered for {node.expert}")
         upstream = [artifacts[item] for item in node.dependencies]
         started = time.perf_counter()
         span = Span(run_id=run_id, task_id=task.task_id, node_id=node.node_id, agent=node.expert,
                     input_artifact_refs=[item.artifact_id for item in upstream])
-        events = [await self._event("plan_node_started", task, run_id, {"nodeId": node.node_id, "agent": node.expert}, span.span_id)]
+        events: list[CanonicalEvent] = []
+        if spawn_event:
+            spawn_event.task_id = task.task_id
+            spawn_event.span_id = span.span_id
+            self.sequence += 1
+            spawn_event.sequence = self.sequence
+            await self.control_plane.emit_event(spawn_event)
+            events.append(spawn_event)
+        events.append(await self._event("plan_node_started", task, run_id,
+                                        {"nodeId": node.node_id, "agent": node.expert}, span.span_id))
         try:
             async with self.semaphore:
                 content = await asyncio.wait_for(
@@ -67,12 +93,23 @@ class Scheduler:
                     timeout=node.budget.max_seconds,
                 )
             usage = content.pop("_usage", {"tokens": 0, "costUsd": 0})
+            model_provenance = content.pop("_model", None)
             enforce_usage(tokens=int(usage.get("tokens", 0)), cost_usd=float(usage.get("costUsd", 0)),
                           max_tokens=node.budget.max_tokens, max_cost_usd=node.budget.max_cost_usd)
+            content = redact(content)
+            if model_provenance:
+                content["modelProvenance"] = model_provenance
+                span.model = str(model_provenance.get("baseModel", "unknown"))
+            head_validation = self.head_validator.validate(node, content, upstream)
+            content["headValidation"] = {
+                "valid": head_validation.valid,
+                "checks": head_validation.checks,
+                "summary": head_validation.summary,
+            }
             artifact = Artifact.create(task_id=task.task_id, run_id=run_id,
                                        artifact_type=ArtifactType(node.output_artifact), producer=node.expert,
                                        upstream_artifact_ids=[item.artifact_id for item in upstream],
-                                       policy_ids=node.policy_ids, content=redact(content))
+                                       policy_ids=node.policy_ids, content=content)
             self.artifact_store.put(artifact)
             await self.control_plane.store_artifact(artifact)
             span.output_artifact_ref = artifact.artifact_id
@@ -83,6 +120,10 @@ class Scheduler:
             events.append(await self._event("artifact_created", task, run_id,
                                             {"nodeId": node.node_id, "artifactId": artifact.artifact_id,
                                              "artifactType": artifact.artifact_type.value}, span.span_id))
+            events.append(await self._event("head_validation_passed", task, run_id,
+                                            {"nodeId": node.node_id, "agent": node.expert,
+                                             "checks": head_validation.checks,
+                                             "artifactId": artifact.artifact_id}, span.span_id))
         except (TimeoutError, BudgetExceeded, Exception) as exc:
             span.error = str(exc)[:500]
             span.latency_ms = (time.perf_counter() - started) * 1000

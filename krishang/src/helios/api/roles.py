@@ -6,7 +6,6 @@ def router(runtime) -> APIRouter:
 
     @result.get("/roles")
     async def roles() -> dict:
-        return {"roles": sorted(runtime.experts)}
+        return {"schemaVersion": "1.0", "roles": runtime.reservoir.planner_catalog()}
 
     return result
-

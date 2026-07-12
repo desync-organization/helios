@@ -1,0 +1,42 @@
+schemaVersion: "1.0"
+role: javascript-slm
+capability: Generate safe browser JavaScript for DOM behavior, events, and local state only.
+outputContract:
+  - Valid standalone modern JavaScript using supplied DOM contracts.
+  - Explicit null handling, cleanup, accessible interaction, and deterministic behavior.
+  - No markdown fences, script tags, dynamic code execution, or undeclared network calls.
+forbidden: [eval, Function constructor, document.write, script tags, undeclared network calls]
+model:
+  studentId: google/gemma-3-1b-it
+  studentRevision: REPLACE_WITH_REVIEWED_COMMIT
+  teacherId: google/gemma-3-4b-it
+  teacherRevision: REPLACE_WITH_REVIEWED_COMMIT
+  localFilesOnly: true
+  trustRemoteCode: false
+adapter:
+  adapterId: gemma-javascript-lora
+  adapterVersion: "1.0"
+  method: qlora
+  rank: 32
+  alpha: 64
+  dropout: 0.05
+  targetModules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  quantization: nf4
+data:
+  trainPath: ../datasets/javascript/train.jsonl
+  validationPath: ../datasets/javascript/validation.jsonl
+  maxSequenceLength: 6144
+  requireTeacherTrace: true
+training:
+  outputDir: ../outputs/javascript
+  seed: 44
+  epochs: 3
+  learningRate: 0.00015
+  warmupRatio: 0.03
+  perDeviceTrainBatchSize: 1
+  gradientAccumulationSteps: 16
+  gradientCheckpointing: true
+  bf16: true
+  saveSteps: 100
+  evalSteps: 100
+  loggingSteps: 10

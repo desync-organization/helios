@@ -16,12 +16,13 @@ ROLE_MODELS = {
 }
 
 
-def model_expert(manager: ModelManager, expert_name: str) -> ExpertHandler:
+def model_expert(manager: ModelManager, expert_name: str, *, role_override: str | None = None,
+                 adapter: dict[str, Any] | None = None) -> ExpertHandler:
     async def run(context: ExpertContext) -> dict[str, Any]:
         # Intent and integration are deterministic hard gates, never model-authored effects.
         if expert_name in {"intent", "integration"}:
             return await deterministic_expert(context)
-        role = ROLE_MODELS.get(expert_name, "triage")
+        role = role_override or ROLE_MODELS.get(expert_name, "triage")
         definition = await manager.acquire(role, context.run_id)
         client = LlamaClient(definition.endpoint, timeout=context.node.budget.max_seconds)
         payload = {
@@ -39,6 +40,12 @@ def model_expert(manager: ModelManager, expert_name: str) -> ExpertHandler:
         )
         if expert_name == "critic":
             system += " You are independent from the producing expert. Verdict must be pass, revise, or blocked."
+        elif expert_name == "html-slm":
+            system += " Return complete semantic HTML files only. Never include script, style, inline handlers, or markdown."
+        elif expert_name == "css-slm":
+            system += " Return complete CSS files only. Never include HTML, JavaScript, remote imports, or markdown."
+        elif expert_name == "javascript-slm":
+            system += " Return complete browser JavaScript files only. Never use eval, Function, hidden network calls, HTML, CSS, or markdown."
         response = await client.completion(
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": json.dumps(payload, sort_keys=True, default=str)}],
@@ -50,6 +57,13 @@ def model_expert(manager: ModelManager, expert_name: str) -> ExpertHandler:
         usage = response.get("usage", {})
         content["_usage"] = {"tokens": int(usage.get("completion_tokens", 0)),
                              "costUsd": float(response.get("cost_usd", 0))}
+        content["_model"] = {
+            "baseModel": definition.model_id,
+            "baseQuantization": definition.quantization,
+            "adapterId": adapter.get("id") if adapter else None,
+            "adapterVersion": adapter.get("version") if adapter else None,
+            "adapterScale": adapter.get("scale", 0) if adapter else 0,
+        }
         # Hard evidence gates override critic confidence.
         if expert_name == "critic":
             if any(item.content.get("success") is False or item.content.get("safe") is False for item in context.upstream):

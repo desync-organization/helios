@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import mutation_guard
@@ -30,7 +30,11 @@ def create_app(runtime) -> FastAPI:
 
     @app.post("/reload", dependencies=[Depends(guard)])
     async def reload_safe_configuration() -> dict:
-        return {"reloaded": True, "scope": ["roles", "model-readiness"], "state": runtime.state()}
+        try:
+            reservoir = runtime.reload_reservoir()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"reloaded": True, "scope": ["roles", "model-readiness"],
+                "reservoir": reservoir, "state": runtime.state()}
 
     return app
-

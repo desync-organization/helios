@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://helios.local/schemas/slm-dataset-record-1.0.json",
+  "title": "Helios web SLM dataset record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "exampleId", "role", "split", "instruction", "context", "response", "source", "license", "consent"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "exampleId": {"type": "string", "minLength": 1},
+    "role": {"enum": ["html-slm", "css-slm", "javascript-slm"]},
+    "split": {"enum": ["train", "validation", "test"]},
+    "instruction": {"type": "string", "minLength": 1},
+    "context": {"type": "object"},
+    "response": {"type": "string", "minLength": 1},
+    "source": {"type": "string", "minLength": 1},
+    "license": {"type": "string", "minLength": 1},
+    "consent": {"enum": ["synthetic", "licensed", "owned"]},
+    "teacher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modelId", "modelRevision", "responseSha256"],
+      "properties": {
+        "modelId": {"type": "string"},
+        "modelRevision": {"type": "string"},
+        "responseSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    }
+  }
+}

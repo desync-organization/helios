@@ -27,6 +27,18 @@ async def deterministic_expert(context: ExpertContext) -> dict[str, Any]:
     evidence = _upstream_summary(context)
     base = {"taskId": task.task_id, "repository": task.repository, "baseSha": task.base_sha,
             "evidence": evidence, "policyIds": context.node.policy_ids}
+    if context.node.expert == "html-slm":
+        return {**base, "language": "html", "files": [{"path": "index.html", "content": task.metadata.get(
+            "htmlFixture", "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Helios</title></head><body><main id=\"app\"></main></body></html>"
+        )}], "completeFiles": True}
+    if context.node.expert == "css-slm":
+        return {**base, "language": "css", "files": [{"path": "styles.css", "content": task.metadata.get(
+            "cssFixture", ":root { color-scheme: dark; }\nbody { margin: 0; background: #0c0c0c; color: #e6f0ff; }"
+        )}], "completeFiles": True}
+    if context.node.expert == "javascript-slm":
+        return {**base, "language": "javascript", "files": [{"path": "app.js", "content": task.metadata.get(
+            "javascriptFixture", "const app = document.querySelector('#app');\nif (app) app.textContent = 'Ready';"
+        )}], "completeFiles": True}
     if output == ArtifactType.CLASSIFICATION:
         lowered = f"{task.title} {task.body}".lower()
         label = "bug" if any(word in lowered for word in ("bug", "error", "fails", "broken")) else "question"
@@ -75,9 +87,25 @@ async def deterministic_expert(context: ExpertContext) -> dict[str, Any]:
                 "testPlan": task.metadata.get("testCommands", ["repository-declared full suite"]),
                 "securityConsiderations": ["least privilege", "no credentials in runtime"], "rollback": "revert the isolated branch"}
     if output == ArtifactType.PACKAGE_RESULT:
-        return {**base, "integrated": True, "conflicts": [], "baseSha": task.base_sha}
+        files: list[dict[str, Any]] = []
+        owners: dict[str, str] = {}
+        conflicts: list[dict[str, str]] = []
+        for artifact in context.upstream:
+            for file_record in artifact.content.get("files", []):
+                path = str(file_record.get("path", ""))
+                if path in owners:
+                    conflicts.append({"path": path, "firstArtifact": owners[path],
+                                      "secondArtifact": artifact.artifact_id})
+                else:
+                    owners[path] = artifact.artifact_id
+                    files.append(file_record)
+        return {**base, "integrated": not conflicts, "conflicts": conflicts,
+                "files": files, "sourceArtifacts": list(owners.values()), "baseSha": task.base_sha}
     if output == ArtifactType.BUILD_MANIFEST:
-        return {**base, "files": task.metadata.get("proposedFiles", []), "commands": task.metadata.get("testCommands", []),
+        integrated_files = [file for item in context.upstream if item.artifact_type == ArtifactType.PACKAGE_RESULT
+                            for file in item.content.get("files", [])]
+        return {**base, "files": integrated_files or task.metadata.get("proposedFiles", []),
+                "commands": task.metadata.get("testCommands", []),
                 "testResults": [item.content for item in context.upstream if item.artifact_type == ArtifactType.TEST_RESULT],
                 "securityResults": [item.content for item in context.upstream if item.artifact_type == ArtifactType.SECURITY_REPORT],
                 "knownLimitations": [], "resultHashes": {item.artifact_id: item.content_hash for item in context.upstream}}

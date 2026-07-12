@@ -1,0 +1,23 @@
+{
+  "adapterId": "gemma-html-lora",
+  "adapterVersion": "1.0",
+  "adapterSha256": "<64 lowercase hex characters>",
+  "adapterPath": "<absolute promoted adapter path>",
+  "format": "gguf-lora",
+  "baseModelId": "google/gemma-3-1b-it",
+  "baseModelRevision": "<reviewed immutable revision>",
+  "baseModelSha256": "<64 lowercase hex characters>",
+  "tokenizerSha256": "<64 lowercase hex characters>",
+  "targetRoles": ["html-slm"],
+  "trainingRunId": "<immutable training run ID>",
+  "datasetManifestSha256": "<64 lowercase hex characters>",
+  "lora": {
+    "rank": 16,
+    "alpha": 32,
+    "dropout": 0.05,
+    "targetModules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  },
+  "quantization": "nf4",
+  "evalReportSha256": "<64 lowercase hex characters>",
+  "promotedAt": "<UTC ISO-8601 timestamp>"
+}

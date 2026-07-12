@@ -3,7 +3,7 @@ from typing import Any
 from helios.contracts import NormalizedTask
 
 
-def bounded_context(task: NormalizedTask, experts: list[str], max_chars: int = 16_000) -> dict[str, Any]:
+def bounded_context(task: NormalizedTask, experts: list[dict[str, Any]], max_chars: int = 16_000) -> dict[str, Any]:
     context = {
         "task": task.model_dump(mode="json", exclude={"body"}),
         "body": task.body[:6000],
@@ -17,4 +17,3 @@ def bounded_context(task: NormalizedTask, experts: list[str], max_chars: int = 1
         context["memory"] = {"truncated": True}
         context["body"] = task.body[:2000]
     return context
-
