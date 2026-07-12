@@ -4,7 +4,8 @@ Convex is the canonical store. The Worker is the only internet ingress and the o
 with GitHub App or provider credentials. The Helios runtime and Member 3 gateway receive only the
 runtime bearer token; the browser receives none of these values.
 
-1. Create a Convex deployment and set `CONTROL_PLANE_INGEST_TOKEN` in its server environment.
+1. Create a Convex deployment and set distinct `CONTROL_PLANE_INGEST_TOKEN` and
+   `GATEWAY_BEARER_TOKEN` values in its server environment.
 2. Deploy `infra/wrangler.toml`; add every secret listed in its final comment using `wrangler secret put`.
 3. Register the GitHub App from `github-app-manifest.json`, replace placeholder URLs, and install it only
    on explicitly approved repositories.

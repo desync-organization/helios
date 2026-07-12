@@ -15,6 +15,7 @@ import type * as backlog from "../backlog.js";
 import type * as controls from "../controls.js";
 import type * as evals from "../evals.js";
 import type * as events from "../events.js";
+import type * as gateway from "../gateway.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as memory from "../memory.js";
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   controls: typeof controls;
   evals: typeof evals;
   events: typeof events;
+  gateway: typeof gateway;
   http: typeof http;
   ingest: typeof ingest;
   memory: typeof memory;

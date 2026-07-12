@@ -44,9 +44,20 @@ class UnavailableControlPlane:
 class HttpControlPlane:
     """Member 2 adapter using proposed `/gateway/*` contract endpoints."""
 
-    def __init__(self, base_url: str, token: str | None, poll_seconds: float) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        token: str | None,
+        poll_seconds: float,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         headers = {"Authorization": f"Bearer {token}"} if token else {}
-        self._client = httpx.AsyncClient(base_url=base_url, headers=headers, timeout=15)
+        self._client = httpx.AsyncClient(
+            base_url=base_url,
+            headers=headers,
+            timeout=15,
+            transport=transport,
+        )
         self._poll_seconds = poll_seconds
         self._cursor: str | None = None
 

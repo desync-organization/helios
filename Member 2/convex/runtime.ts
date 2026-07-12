@@ -22,6 +22,38 @@ export const appendSpan = internalMutation({
     return { duplicate: false, conflict: false };
   },
 });
+export const appendEvent = internalMutation({
+  args: { event: v.any() },
+  handler: async (ctx, { event }) => {
+    const duplicate = await ctx.db.query("eventFeed").withIndex("by_event_id", (q) => q.eq("eventId", event.eventId)).unique();
+    if (duplicate) return { duplicate: true, conflict: false };
+    const previous = await ctx.db.query("eventFeed").withIndex("by_run_sequence", (q) => q.eq("runId", event.runId)).order("desc").first();
+    const expectedSequence = (previous?.sequence ?? 0) + 1;
+    if (event.sequence !== expectedSequence) return { duplicate: false, conflict: true, expectedSequence };
+    await ctx.db.insert("eventFeed", event);
+    return { duplicate: false, conflict: false };
+  },
+});
+export const appendCompletion = internalMutation({
+  args: { taskId: v.string(), runId: v.string(), resultUrl: v.string(), now: v.number() },
+  handler: async (ctx, args) => {
+    const eventId = `completion:${args.runId}`;
+    const duplicate = await ctx.db.query("eventFeed").withIndex("by_event_id", (q) => q.eq("eventId", eventId)).unique();
+    if (duplicate) return { duplicate: true };
+    const previous = await ctx.db.query("eventFeed").withIndex("by_run_sequence", (q) => q.eq("runId", args.runId)).order("desc").first();
+    await ctx.db.insert("eventFeed", { eventId, runId: args.runId, taskId: args.taskId, sequence: (previous?.sequence ?? 0) + 1, kind: "writeback_completed", label: "live", projectionRedacted: { type: "writeback_completed", source: "control-plane", resultUrl: args.resultUrl, payload: { text: "GitHub write-back completed" } }, createdAt: args.now });
+    return { duplicate: false };
+  },
+});
+export const putSpan = internalMutation({
+  args: { span: v.any() },
+  handler: async (ctx, { span }) => {
+    const existing = await ctx.db.query("spans").withIndex("by_span_id", (q) => q.eq("spanId", span.spanId)).unique();
+    if (existing) return { duplicate: true };
+    await ctx.db.insert("spans", span);
+    return { duplicate: false };
+  },
+});
 export const putArtifact = internalMutation({
   args: { artifact: v.any() },
   handler: async (ctx, { artifact }) => {
