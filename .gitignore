@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # dependencies
 /node_modules
 
@@ -20,3 +21,6 @@ pnpm-debug.log*
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+=======
+models/
+>>>>>>> 22e8dcc667f25a71b9be804f773ece3eea4248bc

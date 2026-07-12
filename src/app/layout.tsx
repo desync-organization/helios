@@ -3,7 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 
 const caskaydiaCove = localFont({
-  src: "../fonts/CaskaydiaCoveNerdFont-Regular.ttf",
+  src: "../../public/fonts/CaskaydiaCoveNerdFont-Regular.ttf",
   variable: "--font-caskaydia-cove",
   display: "swap",
 });
