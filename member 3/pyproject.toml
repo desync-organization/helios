@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-member3"
+version = "0.1.0"
+description = "Hermes model-quality, evaluation, gateway, and evidence tooling"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "httpx>=0.28,<1",
+    "pydantic>=2.10,<3",
+    "PyYAML>=6.0,<7",
+    "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.15,<2",
+    "pytest>=8.3,<9",
+    "pytest-asyncio>=0.25,<1",
+    "pytest-cov>=6,<7",
+    "ruff>=0.11,<1",
+    "types-PyYAML>=6.0,<7",
+]
+training = [
+    "accelerate>=1.4,<2",
+    "bitsandbytes>=0.45,<1",
+    "datasets>=3.3,<4",
+    "peft>=0.14,<1",
+    "transformers>=4.49,<5",
+    "trl>=0.15,<1",
+]
+
+[project.scripts]
+hermes-dataset-prepare = "hermes_training.prepare:main"
+hermes-dataset-validate = "hermes_training.validate:main"
+
+[tool.setuptools.packages.find]
+where = ["training/src", "evals/src", "gateway/src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["training/tests", "evals/tests", "gateway/tests", "tests/e2e"]
+pythonpath = ["training/src", "evals/src", "gateway/src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["hermes_training", "hermes_evals", "hermes_gateway"]
+mypy_path = ["training/src", "evals/src", "gateway/src"]

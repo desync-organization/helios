@@ -1,0 +1,12 @@
+schema_version: "1.0"
+source: datasets/raw/triage.jsonl
+output: datasets/processed/triage-v1.jsonl
+manifest: datasets/manifests/triage-v1.json
+redaction_mode: block
+dedupe_threshold: 0.94
+split_seed: 3407
+split_ratios:
+  train: 0.80
+  dev: 0.10
+  test: 0.10
+
