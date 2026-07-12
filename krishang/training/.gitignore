@@ -1,0 +1,7 @@
+datasets/*/*.jsonl
+outputs/
+manifests/generated/
+*.log
+__pycache__/
+*.pyc
+.venv/

@@ -1,14 +1,92 @@
 schemaVersion: "1.0"
 agents:
-  - {name: planner, model: qwen3-8b-q4, tools: [], maxTokens: 3000, maxSeconds: 30}
-  - {name: critic, model: qwen3-8b-q4, tools: [], maxTokens: 2000, maxSeconds: 30, independent: true}
-  - {name: triage, model: qwen3-4b-q4, tools: [], maxTokens: 1200, maxSeconds: 20}
-  - {name: dedupe, model: qwen3-4b-q4+bge-small, tools: [repo:read], maxTokens: 1200, maxSeconds: 20}
-  - {name: web-typescript, model: qwen2.5-coder-7b-q4, tools: [repo:read, workspace:write], maxTokens: 8000, maxSeconds: 180}
-  - {name: backend, model: qwen2.5-coder-7b-q4, tools: [repo:read, workspace:write], maxTokens: 8000, maxSeconds: 180}
-  - {name: test, model: qwen2.5-coder-7b-q4, tools: [command:test], maxTokens: 4000, maxSeconds: 180}
-  - {name: docs, model: qwen3-4b-q4, tools: [repo:read, workspace:write], maxTokens: 4000, maxSeconds: 120}
-  - {name: debug, model: qwen2.5-coder-7b-q4, tools: [repo:read, command:test], maxTokens: 6000, maxSeconds: 180}
-  - {name: security, model: qwen3-4b-q4, tools: [repo:read, scanner:local], maxTokens: 4000, maxSeconds: 300}
-  - {name: research, model: qwen3-4b-q4, tools: [research:proxy], maxTokens: 2000, maxSeconds: 60}
+  - name: planner
+    capability: head orchestration planning delegation and replanning
+    description: Head orchestrator that inspects the complete reservoir and emits typed DAGs.
+    model_id: qwen3-8b-q4
+    model_role: planner
+    persona: Plan bounded work using available agents, policy, memory, and repository evidence.
+    tools: []
+    modes: [maintain, build, security_audit]
+    produces: [plan]
+    max_tokens: 3000
+    max_seconds: 30
 
+  - name: critic
+    capability: independent artifact validation and acceptance review
+    description: Independently validates terminal work and cannot share a producer adapter.
+    model_id: qwen3-8b-q4
+    model_role: critic
+    persona: Validate evidence and acceptance criteria independently.
+    handler_key: critic
+    tools: []
+    modes: [maintain, build, security_audit]
+    produces: [critic_verdict]
+    max_tokens: 2000
+    max_seconds: 30
+    independent: true
+
+  - {name: triage, capability: issue intake classification labels priority, description: Classifies repository work, model_id: qwen3-4b-q4, model_role: triage, persona: Classify only from evidence and policy, handler_key: triage, tools: [], modes: [maintain], produces: [classification], max_tokens: 1200, max_seconds: 20}
+  - {name: dedupe, capability: duplicate issue semantic matching, description: Finds exact duplicate evidence with bge-small retrieval, model_id: qwen3-4b-q4, model_role: triage, persona: Require threshold and linked evidence, handler_key: dedupe, tools: [repo:read], modes: [maintain], produces: [dup_report], max_tokens: 1200, max_seconds: 20}
+  - {name: web-typescript, capability: TypeScript React frontend implementation, description: Implements typed web repository changes, model_id: qwen2.5-coder-7b-q4, model_role: coder, persona: Follow repository conventions and return complete files, handler_key: web-typescript, tools: [repo:read, workspace:write], modes: [maintain, build], produces: [patch], max_tokens: 8000, max_seconds: 180}
+  - {name: backend, capability: backend API data implementation and review, description: Implements server-side repository changes, model_id: qwen2.5-coder-7b-q4, model_role: coder, persona: Produce minimal evidence-backed changes, handler_key: backend, tools: [repo:read, workspace:write], modes: [maintain, build, security_audit], produces: [patch, review_notes], max_tokens: 8000, max_seconds: 180}
+  - {name: test, capability: deterministic tests reproduction and verification, description: Runs and reports authoritative tests, model_id: qwen2.5-coder-7b-q4, model_role: coder, persona: Never turn a failed command into a pass, handler_key: test, tools: [command:test], modes: [maintain, build, security_audit], produces: [test_result], max_tokens: 4000, max_seconds: 180}
+  - {name: docs, capability: documentation replies release drafts, description: Produces documentation and maintainer voice, model_id: qwen3-4b-q4, model_role: triage, persona: Cite exact repository evidence, handler_key: docs, tools: [repo:read, workspace:write], modes: [maintain, build], produces: [draft_reply, patch, release_draft], max_tokens: 4000, max_seconds: 120}
+  - {name: debug, capability: bug reproduction stack trace debugging, description: Creates smallest deterministic reproductions, model_id: qwen2.5-coder-7b-q4, model_role: coder, persona: Record exact failure before suggesting a fix, handler_key: debug, tools: [repo:read, command:test], modes: [maintain, build], produces: [repro_report], max_tokens: 6000, max_seconds: 180}
+  - {name: security, capability: repository security dependency secret SAST audit remediation, description: Performs defensive scoped analysis, model_id: qwen3-4b-q4, model_role: triage, persona: Redact secrets and never claim exploitability without proof, handler_key: security, tools: [repo:read, scanner:local], modes: [maintain, build, security_audit], produces: [security_report, repository_inventory, dependency_inventory, sarif_report, remediation_plan], max_tokens: 4000, max_seconds: 300}
+  - {name: research, capability: primary source advisory research through proxy, description: Retrieves evidence through the consent-aware proxy, model_id: qwen3-4b-q4, model_role: triage, persona: Preserve source URL and retrieval time, handler_key: research, tools: [research:proxy], modes: [maintain, security_audit], produces: [research], max_tokens: 2000, max_seconds: 60}
+  - {name: product, capability: requirements product brief user stories decisions, description: Converts product requests into bounded requirements, model_id: qwen3-8b-q4, model_role: planner, persona: Expose unanswered material decisions, handler_key: product, tools: [repo:read], modes: [build], produces: [requirements_spec], max_tokens: 4000, max_seconds: 90}
+  - {name: architect, capability: architecture repository conventions integration planning, description: Designs repository-aligned architecture, model_id: qwen3-8b-q4, model_role: planner, persona: Prefer existing patterns and define rollback, handler_key: architect, tools: [repo:read], modes: [build], produces: [architecture_decision], max_tokens: 4000, max_seconds: 90}
+  - {name: integration, capability: integrate specialist files run complete build manifest, description: Deterministic integration gate, model_id: deterministic, model_role: triage, persona: Resolve ownership and preserve all validated outputs, handler_key: integration, tools: [workspace:write, command:test], modes: [build], produces: [package_result, build_manifest], max_tokens: 1000, max_seconds: 240}
+  - {name: intent, capability: credential free policy gated terminal intent, description: Deterministic terminal effect gate, model_id: deterministic, model_role: triage, persona: Never hold credentials or bypass critic policy, handler_key: intent, tools: [], modes: [maintain, build, security_audit], produces: [writeback_intent], max_tokens: 1000, max_seconds: 30}
+
+  - name: html-slm
+    capability: semantic accessible HTML document and component generation
+    description: Spawnable Gemma student specialized only for complete HTML output.
+    model_id: google/gemma-3-1b-it
+    model_role: html-slm
+    persona: Return semantic accessible HTML only; never embed JavaScript or CSS.
+    handler_key: html-slm
+    tools: [repo:read, workspace:write]
+    modes: [build]
+    produces: [patch]
+    max_tokens: 3000
+    max_seconds: 90
+    adapter_id: gemma-html-lora
+    adapter_version: "1.0"
+    adapter_manifest: ../adapters/promoted/html-active.json
+    status: template
+
+  - name: css-slm
+    capability: responsive accessible CSS styling generation
+    description: Spawnable Gemma student specialized only for valid CSS output.
+    model_id: google/gemma-3-1b-it
+    model_role: css-slm
+    persona: Return scoped responsive CSS only; preserve accessibility and design tokens.
+    handler_key: css-slm
+    tools: [repo:read, workspace:write]
+    modes: [build]
+    produces: [patch]
+    max_tokens: 3000
+    max_seconds: 90
+    adapter_id: gemma-css-lora
+    adapter_version: "1.0"
+    adapter_manifest: ../adapters/promoted/css-active.json
+    status: template
+
+  - name: javascript-slm
+    capability: browser JavaScript behavior DOM events and state generation
+    description: Spawnable Gemma student specialized only for safe browser JavaScript.
+    model_id: google/gemma-3-1b-it
+    model_role: javascript-slm
+    persona: Return browser JavaScript only; avoid eval, Function, inline HTML, and hidden network calls.
+    handler_key: javascript-slm
+    tools: [repo:read, workspace:write]
+    modes: [build]
+    produces: [patch]
+    max_tokens: 3000
+    max_seconds: 90
+    adapter_id: gemma-javascript-lora
+    adapter_version: "1.0"
+    adapter_manifest: ../adapters/promoted/javascript-active.json
+    status: template

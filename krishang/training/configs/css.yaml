@@ -1,0 +1,42 @@
+schemaVersion: "1.0"
+role: css-slm
+capability: Generate scoped, responsive and accessible CSS only.
+outputContract:
+  - Valid standalone CSS using existing design tokens when supplied.
+  - Responsive rules that preserve keyboard focus and reduced-motion preferences.
+  - No markdown fences, HTML, JavaScript, remote imports, or data exfiltration.
+forbidden: [HTML markup, javascript URLs, remote imports, hidden focus indicators]
+model:
+  studentId: google/gemma-3-1b-it
+  studentRevision: REPLACE_WITH_REVIEWED_COMMIT
+  teacherId: google/gemma-3-4b-it
+  teacherRevision: REPLACE_WITH_REVIEWED_COMMIT
+  localFilesOnly: true
+  trustRemoteCode: false
+adapter:
+  adapterId: gemma-css-lora
+  adapterVersion: "1.0"
+  method: qlora
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  targetModules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  quantization: nf4
+data:
+  trainPath: ../datasets/css/train.jsonl
+  validationPath: ../datasets/css/validation.jsonl
+  maxSequenceLength: 4096
+  requireTeacherTrace: true
+training:
+  outputDir: ../outputs/css
+  seed: 43
+  epochs: 3
+  learningRate: 0.0002
+  warmupRatio: 0.03
+  perDeviceTrainBatchSize: 1
+  gradientAccumulationSteps: 16
+  gradientCheckpointing: true
+  bf16: true
+  saveSteps: 100
+  evalSteps: 100
+  loggingSteps: 10

@@ -1,10 +1,11 @@
 from helios.contracts import ArtifactType, Budget, NormalizedTask, Plan, PlanNode, RuntimeMode, TaskType
-from helios.contracts.plan import NodeKind
+from helios.contracts.plan import NodeKind, SpawnRequest
 
 
 def _node(node_id: str, expert: str, output: ArtifactType, dependencies: list[str] | None = None,
           *, kind: NodeKind = NodeKind.EXPERT, tools: list[str] | None = None,
-          seconds: float = 30, sensitive: bool = False) -> PlanNode:
+          seconds: float = 30, sensitive: bool = False,
+          spawn: SpawnRequest | None = None) -> PlanNode:
     return PlanNode(
         node_id=node_id,
         expert=expert,
@@ -16,6 +17,7 @@ def _node(node_id: str, expert: str, output: ArtifactType, dependencies: list[st
         budget=Budget(max_tokens=3000, max_seconds=seconds),
         kind=kind,
         sensitive=sensitive,
+        spawn=spawn,
     )
 
 
@@ -71,15 +73,38 @@ def build_plan(task: NormalizedTask) -> Plan:
     nodes = [
         _node("requirements", "product", ArtifactType.REQUIREMENTS_SPEC, tools=["repo:read"]),
         _node("architecture", "architect", ArtifactType.ARCHITECTURE_DECISION, ["requirements"], tools=["repo:read"]),
-        _node("web", "web-typescript", ArtifactType.PATCH, ["architecture"], tools=["repo:read", "workspace:write"], seconds=180),
+    ]
+    requested = task.metadata.get("webSlms", [])
+    if task.metadata.get("useWebSlms") and not requested:
+        requested = ["html", "css", "javascript"]
+    web_nodes: list[str] = []
+    for language in requested:
+        normalized = str(language).lower()
+        if normalized not in {"html", "css", "javascript"}:
+            raise ValueError(f"unsupported web SLM specialist: {language}")
+        expert = f"{normalized}-slm"
+        node_id = f"slm-{normalized}"
+        tools = ["repo:read", "workspace:write"]
+        nodes.append(_node(
+            node_id, expert, ArtifactType.PATCH, ["architecture"], tools=tools, seconds=90,
+            spawn=SpawnRequest(name=expert, capability=f"specialized {normalized} generation",
+                               base_model_id="google/gemma-3-1b-it", tools=tools),
+        ))
+        web_nodes.append(node_id)
+    if not web_nodes:
+        nodes.append(_node("web", "web-typescript", ArtifactType.PATCH, ["architecture"],
+                           tools=["repo:read", "workspace:write"], seconds=180))
+        web_nodes.append("web")
+    nodes.extend([
         _node("backend", "backend", ArtifactType.PATCH, ["architecture"], tools=["repo:read", "workspace:write"], seconds=180),
-        _node("integration", "integration", ArtifactType.PACKAGE_RESULT, ["web", "backend"], kind=NodeKind.INTEGRATION, tools=["workspace:write", "command:test"], seconds=240),
+        _node("integration", "integration", ArtifactType.PACKAGE_RESULT, [*web_nodes, "backend"], kind=NodeKind.INTEGRATION, tools=["workspace:write", "command:test"], seconds=240),
         _node("tests", "test", ArtifactType.TEST_RESULT, ["integration"], tools=["command:test"], seconds=180),
         _node("security", "security", ArtifactType.SECURITY_REPORT, ["integration"], tools=["scanner:local"], sensitive=True),
-        _node("manifest", "integration", ArtifactType.BUILD_MANIFEST, ["tests", "security"]),
-        _node("critic", "critic", ArtifactType.CRITIC_VERDICT, ["manifest"], kind=NodeKind.CRITIC),
+        _node("manifest", "integration", ArtifactType.BUILD_MANIFEST, ["integration", "tests", "security"]),
+        _node("critic", "critic", ArtifactType.CRITIC_VERDICT,
+              ["manifest", "integration", "tests", "security"], kind=NodeKind.CRITIC),
         _node("intent", "intent", ArtifactType.WRITEBACK_INTENT, ["critic"], kind=NodeKind.INTENT),
-    ]
+    ])
     return Plan(task_id=task.task_id, policy_version=task.policy_version, nodes=nodes, terminal_node_id="intent", fallback=True)
 
 

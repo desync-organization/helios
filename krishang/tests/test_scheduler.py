@@ -59,7 +59,12 @@ async def test_two_critic_rejections_escalate(tmp_path, maintain_task):
     experts = default_experts()
 
     async def reject(context):
-        return {"verdict": "revise", "notes": ["same normalized failure"], "independent": True}
+        reviewed = context.upstream[0]
+        return {"verdict": "revise", "notes": ["same normalized failure"], "independent": True,
+                "reviewedArtifactId": reviewed.artifact_id,
+                "reviewedContentHash": reviewed.content_hash,
+                "producerAgent": reviewed.producer,
+                "criticAgent": "critic"}
 
     experts["critic"] = reject
     control = InMemoryControlPlane()

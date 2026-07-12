@@ -28,12 +28,17 @@ class Settings(BaseSettings):
     llama_triage_url: str = "http://127.0.0.1:8082"
     llama_coder_url: str = "http://127.0.0.1:8083"
     llama_embed_url: str = "http://127.0.0.1:8084"
+    llama_html_slm_url: str = "http://127.0.0.1:8085"
+    llama_css_slm_url: str = "http://127.0.0.1:8086"
+    llama_javascript_slm_url: str = "http://127.0.0.1:8087"
+    helios_inference_mode: Literal["deterministic", "model"] = "deterministic"
     helios_fallback_url: str = "http://127.0.0.1:8787/inference/fallback"
     helios_adapter_manifest: Path = Path("./adapters/promoted/active.json")
+    helios_agent_catalog: Path = Path("./agents/baseline.yaml")
+    gemma_base_model_path: Path = Path("./models/gemma-3-1b-it-q4.gguf")
     git_repo_cache_root: Path = Path("./workspace/repos")
 
     def ensure_directories(self) -> None:
         self.helios_workspace_root.mkdir(parents=True, exist_ok=True)
         self.git_repo_cache_root.mkdir(parents=True, exist_ok=True)
         self.helios_outbox_path.parent.mkdir(parents=True, exist_ok=True)
-

@@ -1,0 +1,42 @@
+schemaVersion: "1.0"
+role: html-slm
+capability: Generate semantic, accessible HTML documents and components only.
+outputContract:
+  - Complete HTML fragment or document with balanced elements.
+  - Native semantic elements and accessible names where interaction requires them.
+  - No markdown fences, CSS, JavaScript, inline handlers, or invented assets.
+forbidden: [script elements, style elements, inline event handlers, javascript URLs]
+model:
+  studentId: google/gemma-3-1b-it
+  studentRevision: REPLACE_WITH_REVIEWED_COMMIT
+  teacherId: google/gemma-3-4b-it
+  teacherRevision: REPLACE_WITH_REVIEWED_COMMIT
+  localFilesOnly: true
+  trustRemoteCode: false
+adapter:
+  adapterId: gemma-html-lora
+  adapterVersion: "1.0"
+  method: qlora
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  targetModules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  quantization: nf4
+data:
+  trainPath: ../datasets/html/train.jsonl
+  validationPath: ../datasets/html/validation.jsonl
+  maxSequenceLength: 4096
+  requireTeacherTrace: true
+training:
+  outputDir: ../outputs/html
+  seed: 42
+  epochs: 3
+  learningRate: 0.0002
+  warmupRatio: 0.03
+  perDeviceTrainBatchSize: 1
+  gradientAccumulationSteps: 16
+  gradientCheckpointing: true
+  bf16: true
+  saveSteps: 100
+  evalSteps: 100
+  loggingSteps: 10

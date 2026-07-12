@@ -11,18 +11,22 @@ from .validator import PlanPolicy, validate_plan
 
 
 PlanGenerator = Callable[[dict[str, Any], bool], Awaitable[dict[str, Any]]]
+CatalogProvider = Callable[[], list[dict[str, Any]]]
 
 
 class Planner:
-    def __init__(self, policy: PlanPolicy, generator: PlanGenerator | None = None) -> None:
+    def __init__(self, policy: PlanPolicy, generator: PlanGenerator | None = None,
+                 catalog_provider: CatalogProvider | None = None) -> None:
         self.policy = policy
         self.generator = generator
+        self.catalog_provider = catalog_provider
 
     async def create_plan(self, task: NormalizedTask) -> tuple[Plan, list[CanonicalEvent]]:
         task.assert_authorized()
         events: list[CanonicalEvent] = []
         if self.generator:
-            context = bounded_context(task, sorted(self.policy.registered_experts))
+            catalog = self.catalog_provider() if self.catalog_provider else self.policy.agent_catalog
+            context = bounded_context(task, catalog)
             for repair in (False, True):
                 try:
                     generated = await self.generator(context, repair)
@@ -34,4 +38,3 @@ class Planner:
         events.append(CanonicalEvent(type="planner_fallback", task_id=task.task_id,
                                      payload={"planId": plan.plan_id, "mode": task.mode.value}))
         return plan, events
-
