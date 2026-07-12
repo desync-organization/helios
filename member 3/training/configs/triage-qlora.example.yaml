@@ -1,0 +1,39 @@
+schema_version: "1.0"
+run_name: triage-qwen3-4b-r16
+base_model_id: Qwen/Qwen3-4B
+base_model_revision: "<pin-exact-hugging-face-commit>"
+base_model_sha256: "<record-verified-base-hash>"
+tokenizer_sha256: "<record-verified-tokenizer-hash>"
+dataset_manifest: datasets/manifests/triage-v1.json
+output_root: training/runs
+method: qlora
+compute_dtype: bf16
+quantization:
+  bits: 4
+  quant_type: nf4
+  double_quant: true
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+training:
+  epochs: 2
+  learning_rate: 0.0002
+  max_length: 2048
+  batch_size: 1
+  gradient_accumulation_steps: 16
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  logging_steps: 5
+  seed: 3407
+  packing: false
+  assistant_only_loss: true
+

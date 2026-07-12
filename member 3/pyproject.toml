@@ -29,8 +29,10 @@ training = [
     "bitsandbytes>=0.45,<1",
     "datasets>=3.3,<4",
     "peft>=0.14,<1",
+    "safetensors>=0.5,<1",
+    "torch>=2.6,<3",
     "transformers>=4.49,<5",
-    "trl>=0.15,<1",
+    "trl>=1.8,<2",
 ]
 
 [project.scripts]
