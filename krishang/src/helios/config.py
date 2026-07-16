@@ -1,15 +1,20 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    environment: Literal["development", "test", "production"] = "development"
+    control_plane_url: str = ""
+    worker_url: str = ""
     convex_http_url: str = ""
-    helios_runtime_token: str = ""
+    helios_runtime_token: str = Field(
+        "", validation_alias=AliasChoices("RUNTIME_BEARER_TOKEN", "HELIOS_RUNTIME_TOKEN")
+    )
     helios_instance_id: str = "demo-laptop-1"
     helios_api_host: str = "127.0.0.1"
     helios_api_port: int = 8788
@@ -37,6 +42,15 @@ class Settings(BaseSettings):
     helios_agent_catalog: Path = Path("./agents/baseline.yaml")
     gemma_base_model_path: Path = Path("./models/gemma-3-1b-it-q4.gguf")
     git_repo_cache_root: Path = Path("./workspace/repos")
+    app_url: str = ""
+    demo_repository: str = ""
+    demo_github_repository_id: str = ""
+
+    @computed_field
+    @property
+    def runtime_control_plane_url(self) -> str:
+        """The runtime talks to the credential-isolating Worker when configured."""
+        return self.worker_url or self.control_plane_url or self.convex_http_url
 
     def ensure_directories(self) -> None:
         self.helios_workspace_root.mkdir(parents=True, exist_ok=True)

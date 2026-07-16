@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   FileCode,
@@ -30,15 +30,19 @@ import {
 
 const typeIcons: Record<string, LucideIcon> = {
   component: Eye,
+  html: Eye,
   "api-route": FileCode,
   schema: Database,
+  script: FileCode,
   style: Box,
 };
 
 const typeColors: Record<string, string> = {
   component: "text-blue-400",
+  html: "text-orange-400",
   "api-route": "text-emerald-400",
   schema: "text-amber-400",
+  script: "text-yellow-400",
   style: "text-purple-400",
 };
 
@@ -165,26 +169,118 @@ function buildPreviewHtml(code: string, componentName?: string): string {
 </html>`;
 }
 
-function LivePreview({ artifact }: { artifact: CodeArtifact | null }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [error, setError] = useState<string | null>(null);
+interface StaticSiteArtifacts {
+  index?: CodeArtifact;
+  styles?: CodeArtifact;
+  app?: CodeArtifact;
+}
 
-  useEffect(() => {
-    if (!artifact || artifact.type !== "component" || artifact.progress < 100) return;
-    setError(null);
+function artifactBasename(artifact: CodeArtifact): string {
+  return artifact.filename.replace(/\\/g, "/").split("/").pop()?.toLowerCase() ?? "";
+}
 
-    try {
-      const html = buildPreviewHtml(artifact.code, artifact.componentName);
-      const blob = new Blob([html], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      if (iframeRef.current) {
-        iframeRef.current.src = url;
-      }
-      return () => URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(String(err));
+function getStaticSiteArtifacts(artifacts: CodeArtifact[]): StaticSiteArtifacts {
+  return {
+    index: artifacts.find((artifact) => artifactBasename(artifact) === "index.html"),
+    styles: artifacts.find((artifact) => artifactBasename(artifact) === "styles.css"),
+    app: artifacts.find((artifact) => artifactBasename(artifact) === "app.js"),
+  };
+}
+
+function buildStaticSitePreviewHtml(site: StaticSiteArtifacts): string {
+  if (!site.index) return "";
+
+  const csp = [
+    "default-src 'none'",
+    "base-uri 'none'",
+    "connect-src 'none'",
+    "font-src data:",
+    "form-action 'none'",
+    "frame-src 'none'",
+    "img-src data: blob:",
+    "media-src data: blob:",
+    "object-src 'none'",
+    "script-src 'unsafe-inline'",
+    "style-src 'unsafe-inline'",
+  ].join("; ");
+  const safeCss = site.styles?.code.replace(/<\/style/gi, "<\\/style") ?? "";
+  const safeJavaScript = site.app?.code.replace(/<\/script/gi, "<\\/script") ?? "";
+  const headContent = [
+    `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
+    safeCss ? `<style data-helios-artifact="styles.css">${safeCss}</style>` : "",
+  ].join("");
+  const script = safeJavaScript
+    ? `<script data-helios-artifact="app.js">${safeJavaScript}<\/script>`
+    : "";
+  let html = site.index.code
+    .replace(
+      /<link\b(?=[^>]*\bhref\s*=\s*(["'])(?:\.?\/)?styles\.css(?:[?#][^"']*)?\1)[^>]*>/gi,
+      "",
+    )
+    .replace(
+      /<script\b(?=[^>]*\bsrc\s*=\s*(["'])(?:\.?\/)?app\.js(?:[?#][^"']*)?\1)[^>]*>[\s\S]*?<\/script\s*>/gi,
+      "",
+    );
+
+  if (/<head\b[^>]*>/i.test(html)) {
+    html = html.replace(/<head\b[^>]*>/i, (head) => `${head}${headContent}`);
+  } else if (/<html\b[^>]*>/i.test(html)) {
+    html = html.replace(/<html\b[^>]*>/i, (root) => `${root}<head>${headContent}</head>`);
+  } else {
+    html = `<head>${headContent}</head>${html}`;
+  }
+
+  if (script) {
+    html = /<\/body\s*>/i.test(html)
+      ? html.replace(/<\/body\s*>/i, `${script}</body>`)
+      : `${html}${script}`;
+  }
+
+  return html;
+}
+
+function LivePreview({
+  artifacts,
+  artifact,
+}: {
+  artifacts: CodeArtifact[];
+  artifact: CodeArtifact | null;
+}) {
+  const staticSite = getStaticSiteArtifacts(artifacts);
+  const staticArtifacts = [staticSite.index, staticSite.styles, staticSite.app].filter(
+    (item): item is CodeArtifact => Boolean(item),
+  );
+
+  if (staticArtifacts.length > 0) {
+    const requiredArtifacts = [staticSite.index, staticSite.styles, staticSite.app];
+    const progress = Math.min(...requiredArtifacts.map((item) => item?.progress ?? 0));
+    const siteReady = requiredArtifacts.every(
+      (item): item is CodeArtifact => Boolean(item && item.progress >= 100),
+    );
+
+    if (!siteReady) {
+      return (
+        <div className="h-full bg-muted/30 rounded-lg flex items-center justify-center text-muted-foreground">
+          <motion.span
+            animate={{ opacity: [1, 0.4] }}
+            transition={{ duration: 1, repeat: Infinity }}
+          >
+            Generating site… {progress}%
+          </motion.span>
+        </div>
+      );
     }
-  }, [artifact?.id, artifact?.progress, artifact?.code, artifact?.componentName, artifact?.type]);
+
+    return (
+      <iframe
+        title="Generated site preview"
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+        srcDoc={buildStaticSitePreviewHtml(staticSite)}
+        className="w-full h-full rounded-lg border border-border bg-white"
+      />
+    );
+  }
 
   if (!artifact) {
     return (
@@ -219,19 +315,12 @@ function LivePreview({ artifact }: { artifact: CodeArtifact | null }) {
     );
   }
 
-  if (error) {
-    return (
-      <div className="h-full bg-red-950/30 rounded-lg p-4 text-red-400 font-mono text-sm overflow-auto">
-        {error}
-      </div>
-    );
-  }
-
   return (
     <iframe
-      ref={iframeRef}
       title="Live Preview"
       sandbox="allow-scripts"
+      referrerPolicy="no-referrer"
+      srcDoc={buildPreviewHtml(artifact.code, artifact.componentName)}
       className="w-full h-full rounded-lg border border-border bg-black"
     />
   );
@@ -245,16 +334,29 @@ export function Workstation() {
   const projectRepoName = useOrchestratorStore((s) => s.projectRepoName);
 
   const [isPlaying, setIsPlaying] = useState(true);
-  const [activeTab, setActiveTab] = useState<string>("code");
+  const [tabSelection, setTabSelection] = useState<{
+    projectKey: string;
+    tab: string;
+  } | null>(null);
 
   const activeArtifact = artifacts.find((a) => a.id === activeArtifactId) ?? null;
-
-  // Auto-switch to preview tab when a component finishes streaming
-  useEffect(() => {
-    if (activeArtifact?.type === "component" && activeArtifact.progress >= 100) {
-      setActiveTab("preview");
-    }
-  }, [activeArtifact?.progress, activeArtifact?.type]);
+  const staticSite = getStaticSiteArtifacts(artifacts);
+  const staticSiteReady = Boolean(
+    staticSite.index &&
+    staticSite.styles &&
+    staticSite.app &&
+    [staticSite.index, staticSite.styles, staticSite.app]
+      .every((artifact) => artifact.progress >= 100),
+  );
+  const componentReady = activeArtifact?.type === "component" && activeArtifact.progress >= 100;
+  const projectKey = artifacts[0]
+    ? `${artifacts[0].id}:${artifacts[0].timestamp.getTime()}`
+    : "empty";
+  const activeTab = tabSelection?.projectKey === projectKey
+    ? tabSelection.tab
+    : staticSiteReady || componentReady
+      ? "preview"
+      : "code";
 
   /** Download the active artifact code as a file. */
   function handleDownload() {
@@ -369,7 +471,11 @@ export function Workstation() {
 
         {/* Main editor / preview area */}
         <div className="flex-1 p-4">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+          <Tabs
+            value={activeTab}
+            onValueChange={(tab) => setTabSelection({ projectKey, tab })}
+            className="h-full flex flex-col"
+          >
             <TabsList className="w-fit">
               <TabsTrigger value="code">Code</TabsTrigger>
               <TabsTrigger value="preview">Preview</TabsTrigger>
@@ -390,7 +496,7 @@ export function Workstation() {
             </TabsContent>
 
             <TabsContent value="preview" className="flex-1 mt-4">
-              <LivePreview artifact={activeArtifact} />
+              <LivePreview artifacts={artifacts} artifact={activeArtifact} />
             </TabsContent>
           </Tabs>
         </div>

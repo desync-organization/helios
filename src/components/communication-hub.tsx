@@ -91,7 +91,7 @@ export function CommunicationHub() {
   // Auto-connect if needed
   useEffect(() => {
     if (!connected) {
-      const URL = process.env.NEXT_PUBLIC_ML_SERVICE_URL ?? "ws://localhost:9100";
+      const URL = process.env.NEXT_PUBLIC_ML_SERVICE_URL ?? "ws://127.0.0.1:8788/ws";
       connect(URL);
     }
   }, [connected, connect]);

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Literal
 
 import yaml
@@ -8,9 +9,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(alias_generator=lambda value: value.split("_")[0] + "".join(
-        part.capitalize() for part in value.split("_")[1:]
-    ), populate_by_name=True, extra="forbid")
+    model_config = ConfigDict(
+        alias_generator=lambda value: (
+            value.split("_")[0]
+            + "".join(part.capitalize() for part in value.split("_")[1:])
+        ),
+        populate_by_name=True,
+        extra="forbid",
+    )
 
 
 class ModelSpec(StrictModel):
@@ -74,6 +80,14 @@ class SpecialistSpec(StrictModel):
     data: DataSpec
     training: TrainingSpec
 
+    @model_validator(mode="after")
+    def models_match_bounded_gemma_roles(self) -> "SpecialistSpec":
+        if self.model.student_id != "google/gemma-3-1b-it":
+            raise ValueError("web SLM students must use google/gemma-3-1b-it")
+        if self.model.teacher_id != "google/gemma-3-4b-it":
+            raise ValueError("web SLM teachers must use google/gemma-3-4b-it")
+        return self
+
 
 def load_spec(path: Path) -> SpecialistSpec:
     if not path.is_file():
@@ -84,5 +98,7 @@ def load_spec(path: Path) -> SpecialistSpec:
 
 def require_pinned_models(spec: SpecialistSpec) -> None:
     revisions = (spec.model.student_revision, spec.model.teacher_revision)
-    if any(not value or value.startswith("REPLACE_") for value in revisions):
-        raise ValueError("student and teacher revisions must be replaced with reviewed immutable commits")
+    if any(not re.fullmatch(r"[a-f0-9]{40}", value) for value in revisions):
+        raise ValueError(
+            "student and teacher revisions must be reviewed 40-character commit hashes"
+        )

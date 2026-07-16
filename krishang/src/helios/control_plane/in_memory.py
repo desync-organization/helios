@@ -6,7 +6,7 @@ from helios.clock import now_utc
 from helios.contracts import Artifact, CanonicalEvent, NormalizedTask, Span
 from helios.ids import new_id
 
-from .base import ControlPlane, Lease, LeaseLost
+from .base import ControlPlane, Lease, LeaseLost, RuntimeControlState
 
 
 class InMemoryControlPlane(ControlPlane):
@@ -18,7 +18,25 @@ class InMemoryControlPlane(ControlPlane):
         self.artifacts: dict[str, Artifact] = {}
         self.intents: dict[str, Artifact] = {}
         self.results: dict[str, dict[str, Any]] = {}
+        self.escalations: dict[str, dict[str, Any]] = {}
+        self.control_state = RuntimeControlState()
+        self.agent_config: dict[str, Any] = {"agents": [], "adapters": {}}
         self.lease_seconds = lease_seconds
+
+    async def get_control_state(self) -> RuntimeControlState:
+        return self.control_state.model_copy(deep=True)
+
+    async def get_agent_config(self) -> dict[str, Any]:
+        return {
+            "agents": [dict(item) for item in self.agent_config.get("agents", [])],
+            "adapters": dict(self.agent_config.get("adapters", {})),
+        }
+
+    async def resume_sequence(self, run_id: str) -> int:
+        return max(
+            (event.sequence for event in self.events.values() if event.run_id == run_id),
+            default=0,
+        )
 
     async def enqueue(self, task: NormalizedTask) -> None:
         await self.tasks.put(task)
@@ -65,3 +83,25 @@ class InMemoryControlPlane(ControlPlane):
             raise LeaseLost("write-back cancelled because lease is invalid")
         self.intents.setdefault(intent.artifact_id, intent)
 
+    async def escalate_task(
+        self,
+        lease_id: str,
+        *,
+        reason: str,
+        run_id: str | None = None,
+        artifact_ids: list[str] | None = None,
+        restricted: bool = False,
+    ) -> None:
+        state = self.leases.get(lease_id)
+        if not state:
+            raise LeaseLost("cannot escalate an unknown lease")
+        self.escalations.setdefault(lease_id, {
+            "taskId": state.task.task_id,
+            "runId": run_id,
+            "artifactIds": list(artifact_ids or []),
+            "reason": reason[:500],
+            "restricted": restricted,
+        })
+        if run_id:
+            self.results.setdefault(run_id, {"status": "escalated", "reason": reason[:500]})
+        self.leases.pop(lease_id, None)

@@ -30,11 +30,23 @@ class Planner:
             for repair in (False, True):
                 try:
                     generated = await self.generator(context, repair)
-                    return validate_plan(Plan.model_validate(generated), self.policy), events
+                    return validate_plan(
+                        Plan.model_validate(generated),
+                        self.policy,
+                        mode=task.mode.value,
+                        task_id=task.task_id,
+                        policy_version=task.policy_version,
+                    ), events
                 except (ValidationError, ValueError) as exc:
                     events.append(CanonicalEvent(type="planner_schema_rejected", task_id=task.task_id,
                                                  payload={"repairAttempt": repair, "error": str(exc)[:500]}))
-        plan = validate_plan(fallback_plan(task), self.policy)
+        plan = validate_plan(
+            fallback_plan(task),
+            self.policy,
+            mode=task.mode.value,
+            task_id=task.task_id,
+            policy_version=task.policy_version,
+        )
         events.append(CanonicalEvent(type="planner_fallback", task_id=task.task_id,
                                      payload={"planId": plan.plan_id, "mode": task.mode.value}))
         return plan, events

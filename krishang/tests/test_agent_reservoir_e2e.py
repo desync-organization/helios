@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -19,6 +21,7 @@ from helios.contracts import (
 )
 from helios.contracts.plan import NodeKind, SpawnRequest
 from helios.control_plane import InMemoryControlPlane
+from helios.execution import ExecutionServices
 from helios.models import ModelManager, default_model_registry
 from helios.runtime import DEFAULT_TOOLS, HeliosRuntime
 from helios.scheduler import Scheduler
@@ -67,6 +70,37 @@ def _build_task(**metadata: str) -> NormalizedTask:
         consent=ConsentScope(repository_allowlisted=True),
         metadata=metadata,
     )
+
+
+def _source_repository(tmp_path: Path, task: NormalizedTask) -> Path:
+    source = tmp_path / f"source-{task.task_id}"
+    source.mkdir()
+    subprocess.run(["git", "init", "--quiet", str(source)], check=True)
+    (source / "README.md").write_text("# Web fixture\n", encoding="utf-8")
+    (source / "tests").mkdir()
+    (source / "tests" / "test_generated_web.py").write_text(
+        "from pathlib import Path\n\n"
+        "def test_generated_web_files_exist():\n"
+        "    assert all(Path(name).is_file() for name in ('index.html', 'styles.css', 'app.js'))\n",
+        encoding="utf-8",
+    )
+    (source / "pyproject.toml").write_text(
+        "[project]\nname = \"web-fixture\"\nversion = \"0.0.1\"\n\n[tool.pytest.ini_options]\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(source), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(source), "-c", "user.name=Helios Test", "-c",
+         "user.email=helios@example.invalid", "commit", "--quiet", "-m", "fixture"],
+        check=True,
+    )
+    task.base_sha = subprocess.run(
+        ["git", "-C", str(source), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return source
 
 
 def _specialist_plan(task: NormalizedTask, specialist: str) -> Plan:
@@ -186,11 +220,13 @@ async def test_spawned_web_specialist_executes_emits_birth_event_and_stores_head
     lease = await control.claim("head-orchestrator")
     reservoir = _reservoir(tmp_path, snapshot=tmp_path / "reservoir.json")
     store = ArtifactStore(tmp_path / "artifacts")
+    source = _source_repository(tmp_path, task)
     scheduler = Scheduler(
         control_plane=control,
         artifact_store=store,
         experts=reservoir.handlers(),
         reservoir=reservoir,
+        execution_services=ExecutionServices(task, tmp_path / "execution", source_repository=source),
     )
 
     result = await scheduler.execute(task, _specialist_plan(task, specialist), lease.lease_id)
@@ -231,11 +267,13 @@ async def test_head_rejects_invalid_specialist_output_before_artifact_storage(
     await control.enqueue(task)
     lease = await control.claim("head-orchestrator")
     reservoir = _reservoir(tmp_path)
+    source = _source_repository(tmp_path, task)
     scheduler = Scheduler(
         control_plane=control,
         artifact_store=ArtifactStore(tmp_path / "artifacts"),
         experts=reservoir.handlers(),
         reservoir=reservoir,
+        execution_services=ExecutionServices(task, tmp_path / "execution", source_repository=source),
     )
 
     with pytest.raises(HeadValidationError):
@@ -299,9 +337,29 @@ async def test_head_spawns_all_three_slms_integrates_outputs_and_critic_validate
     control = InMemoryControlPlane()
     runtime = HeliosRuntime(settings=_settings(tmp_path), control_plane=control)
     task = _build_task(useWebSlms=True)
+    task.policy_pack["allowNoopAgents"] = ["backend"]
+    task.consent.allowed_scanners = ["bandit"]
+    source = _source_repository(tmp_path, task)
     await control.enqueue(task)
+    lease = await control.claim("head-orchestrator")
+    plan, events = await runtime.planner.create_plan(task)
+    for event in events:
+        await control.emit_event(event)
+    services = ExecutionServices(task, tmp_path / "execution", source_repository=source)
+    services._scanner_spec = lambda _scanner: [
+        sys.executable,
+        "-c",
+        'print(\'{"results": []}\')',
+    ]
 
-    assert await runtime.process_once() is True
+    await Scheduler(
+        control_plane=control,
+        artifact_store=ArtifactStore(tmp_path / "artifacts"),
+        experts=runtime.experts,
+        reservoir=runtime.reservoir,
+        execution_services=services,
+        writeback_enabled=True,
+    ).execute(task, plan, lease.lease_id)
 
     births = [event for event in control.events.values() if event.type == "agent_spawned"]
     assert {event.payload["name"] for event in births} == set(SPECIALISTS)

@@ -13,7 +13,8 @@ async def test_fast_lane_produces_credential_free_intent(tmp_path, maintain_task
     control = InMemoryControlPlane()
     await control.enqueue(maintain_task)
     lease = await control.claim("test")
-    scheduler = Scheduler(control_plane=control, artifact_store=ArtifactStore(tmp_path), experts=default_experts())
+    scheduler = Scheduler(control_plane=control, artifact_store=ArtifactStore(tmp_path), experts=default_experts(),
+                          writeback_enabled=True)
     result = await scheduler.execute(maintain_task, maintain_plan(maintain_task), lease.lease_id)
     assert result.status == "completed"
     assert result.intent.content["credentialFree"] is True
@@ -47,12 +48,28 @@ async def test_lease_loss_cancels_writeback(tmp_path, maintain_task):
     control = InMemoryControlPlane(lease_seconds=-1)
     await control.enqueue(maintain_task)
     lease = await control.claim("test")
-    scheduler = Scheduler(control_plane=control, artifact_store=ArtifactStore(tmp_path), experts=default_experts())
+    scheduler = Scheduler(control_plane=control, artifact_store=ArtifactStore(tmp_path), experts=default_experts(),
+                          writeback_enabled=True)
     try:
         await scheduler.execute(maintain_task, maintain_plan(maintain_task), lease.lease_id)
     except Exception as exc:
         assert "lease" in str(exc).lower()
     assert not control.intents
+
+
+async def test_disabled_writeback_finishes_as_explicit_dry_run(tmp_path, maintain_task):
+    control = InMemoryControlPlane()
+    await control.enqueue(maintain_task)
+    lease = await control.claim("test")
+    result = await Scheduler(
+        control_plane=control,
+        artifact_store=ArtifactStore(tmp_path),
+        experts=default_experts(),
+    ).execute(maintain_task, maintain_plan(maintain_task), lease.lease_id)
+
+    assert result.status == "dry_run"
+    assert not control.intents
+    assert any(event.type == "writeback_skipped" for event in result.events)
 
 
 async def test_two_critic_rejections_escalate(tmp_path, maintain_task):
@@ -64,7 +81,12 @@ async def test_two_critic_rejections_escalate(tmp_path, maintain_task):
                 "reviewedArtifactId": reviewed.artifact_id,
                 "reviewedContentHash": reviewed.content_hash,
                 "producerAgent": reviewed.producer,
-                "criticAgent": "critic"}
+                "criticAgent": "critic",
+                "reviewedArtifacts": [
+                    {"artifactId": item.artifact_id, "contentHash": item.content_hash,
+                     "producerAgent": item.producer}
+                    for item in context.upstream
+                ]}
 
     experts["critic"] = reject
     control = InMemoryControlPlane()

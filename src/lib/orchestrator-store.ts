@@ -88,6 +88,21 @@ interface Envelope<TPayload = unknown> {
   payload?: TPayload;
 }
 
+interface DirectMessage {
+  type: string;
+  data?: unknown;
+  artifact?: unknown;
+  id?: unknown;
+  filename?: unknown;
+  language?: unknown;
+  code?: unknown;
+  artifactType?: unknown;
+  progress?: unknown;
+  files?: unknown;
+  githubUrl?: unknown;
+  projectName?: unknown;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Store interface                                                    */
 /* ------------------------------------------------------------------ */
@@ -116,6 +131,103 @@ interface OrchestratorState {
   clearArtifacts: () => void;
   clearTerminal: () => void;
   clearCostData: () => void;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function inferArtifactLanguage(filename: string): string {
+  const extension = filename.split(".").pop()?.toLowerCase();
+  const languages: Record<string, string> = {
+    css: "css",
+    html: "html",
+    js: "javascript",
+    jsx: "javascript",
+    json: "json",
+    ts: "typescript",
+    tsx: "typescript",
+  };
+  return (extension && languages[extension]) || "text";
+}
+
+function inferArtifactType(filename: string, language: string): string {
+  const basename = filename.replace(/\\/g, "/").split("/").pop()?.toLowerCase();
+  if (basename === "index.html" || language === "html") return "html";
+  if (basename === "styles.css" || language === "css") return "style";
+  if (basename === "app.js" || language === "javascript") return "script";
+  return "file";
+}
+
+function artifactPayload(message: DirectMessage): Record<string, unknown> {
+  if (isRecord(message.data)) return message.data;
+  if (isRecord(message.artifact)) return message.artifact;
+  return message as unknown as Record<string, unknown>;
+}
+
+function upsertArtifactState(
+  state: OrchestratorState,
+  payload: Record<string, unknown>,
+  defaultAgent: string,
+): Partial<OrchestratorState> {
+  const incomingFilename = nonEmptyString(payload.filename);
+  const incomingId = nonEmptyString(payload.id);
+  const artifactId = incomingId ?? (incomingFilename
+    ? `artifact:${incomingFilename}`
+    : `artifact:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`);
+  const existingIndex = state.artifacts.findIndex((artifact) => artifact.id === artifactId);
+  const existing = existingIndex >= 0 ? state.artifacts[existingIndex] : undefined;
+  const filename = incomingFilename ?? existing?.filename ?? "untitled";
+  const language = nonEmptyString(payload.language) ?? existing?.language ?? inferArtifactLanguage(filename);
+  const incomingType = nonEmptyString(payload.artifactType)
+    ?? nonEmptyString(payload.artifact_type)
+    ?? nonEmptyString(payload.type);
+  const artifactType = incomingType && incomingType !== "artifact"
+    ? incomingType
+    : existing?.type ?? inferArtifactType(filename, language);
+  const rawProgress = typeof payload.progress === "number"
+    ? payload.progress
+    : Number(payload.progress ?? 100);
+  const progress = Number.isFinite(rawProgress)
+    ? Math.min(100, Math.max(0, rawProgress))
+    : 100;
+  const agent = nonEmptyString(payload.agent) ?? nonEmptyString(payload.wrapper) ?? defaultAgent;
+  const artifact: CodeArtifact = {
+    id: artifactId,
+    filename,
+    language,
+    code: typeof payload.code === "string" ? payload.code : existing?.code ?? "",
+    type: artifactType,
+    wrapper: agent,
+    agent,
+    timestamp: existing?.timestamp ?? new Date(),
+    status: progress >= 100 ? "complete" : "streaming",
+    progress,
+    componentName: nonEmptyString(payload.componentName) ?? existing?.componentName,
+  };
+  const artifacts = [...state.artifacts];
+
+  if (existingIndex >= 0) {
+    artifacts[existingIndex] = artifact;
+  } else {
+    artifacts.push(artifact);
+  }
+
+  const currentProjectFiles = existing?.filename && existing.filename !== filename
+    ? state.projectFiles.filter((projectFile) => projectFile !== existing.filename)
+    : state.projectFiles;
+
+  return {
+    artifacts,
+    projectFiles: currentProjectFiles.includes(filename)
+      ? currentProjectFiles
+      : [...currentProjectFiles, filename],
+    activeArtifactId: state.activeArtifactId ?? artifactId,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -263,8 +375,14 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   /* ---- send a user chat message (to PM via orchestrator) ---- */
 
   sendChatMessage(text: string) {
-    // 1) Echo locally so the UI feels responsive immediately
+    // A prompt starts a fresh generated project while preserving conversation history.
     set((state) => ({
+      artifacts: [],
+      projectFiles: [],
+      activeArtifactId: null,
+      projectGithubUrl: null,
+      projectName: null,
+      projectRepoName: null,
       chatMessages: [
         ...state.chatMessages,
         {
@@ -278,9 +396,9 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       ],
     }));
 
-    // 2) Send prompt directly to ML service
+    // Send the prompt directly to the Helios site generator.
     if (_ws && _ws.readyState === WebSocket.OPEN) {
-      _ws.send(JSON.stringify({ type: 'prompt', data: text }));
+      _ws.send(JSON.stringify({ type: "prompt", data: text }));
     }
   },
 
@@ -302,24 +420,29 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       });
 
       ws.addEventListener("message", (event) => {
-        let msg: { type: string; data: string; githubUrl?: string; projectName?: string };
+        let msg: DirectMessage;
         try {
-          msg = JSON.parse(String(event.data));
+          const parsed = JSON.parse(String(event.data)) as unknown;
+          if (!isRecord(parsed) || typeof parsed.type !== "string") {
+            throw new TypeError("message must be an object with a string type");
+          }
+          msg = parsed as unknown as DirectMessage;
         } catch {
           console.warn("[ml-service] invalid message", event.data);
           return;
         }
 
         // Handle progress updates
-        if (msg.type === 'progress') {
-          let logLine = msg.data;
+        if (msg.type === "progress") {
+          const terminalLine = typeof msg.data === "string" ? msg.data : JSON.stringify(msg.data ?? "");
+          let logLine = terminalLine;
 
           // Only show "ML Pipeline" as author for the starting message
           // Otherwise extract office name from content (e.g., "🏢 CEO OFFICE" -> "CEO OFFICE")
-          let author = 'ML Pipeline';
-          let avatar = 'ML';
+          let author = "ML Pipeline";
+          let avatar = "ML";
 
-          if (!logLine.includes('Starting ML pipeline for:')) {
+          if (!logLine.includes("Starting ML pipeline for:")) {
             // Try to extract office name from patterns like "🏢 CEO OFFICE — ..." or "⚡️ DEVOPS OFFICE — ..."
             // Match at start of line OR after whitespace, with optional emoji prefix
             const officeMatch = logLine.match(/^(?:[🏢⚡️✅⏳🔧🚀📁🔗📤📝❌⚠️])?\s*([A-Z][A-Z\s]*(?:OFFICE|DESIGN|API|SECURITY|CEO|PM|DEVOPS))\s*[—\-:]\s*/) ||
@@ -330,7 +453,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
               author = officeMatch[1].trim();
               avatar = author.slice(0, 2).toUpperCase();
               // Remove the prefix from the content to avoid repetition
-              logLine = logLine.replace(officeMatch[0], '').trim();
+              logLine = logLine.replace(officeMatch[0], "").trim();
             } else {
               // Fallback: look for bracketed names or any ALL_CAPS word
               const fallbackMatch = logLine.match(/\[([A-Z][A-Z_]+)\]/) ||
@@ -340,8 +463,8 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
                 avatar = author.slice(0, 2).toUpperCase();
               } else {
                 // Default to System for other messages
-                author = 'System';
-                avatar = 'SY';
+                author = "System";
+                avatar = "SY";
               }
             }
           }
@@ -358,31 +481,42 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
                 isUser: false,
               },
             ],
-            terminalLogs: [...state.terminalLogs, msg.data], // Keep original in terminal
+            terminalLogs: [...state.terminalLogs, terminalLine],
           }));
         }
 
         // Handle raw terminal output
-        if (msg.type === 'terminal') {
+        if (msg.type === "terminal" && typeof msg.data === "string") {
+          const terminalLine = msg.data;
           set((state) => ({
-            terminalLogs: [...state.terminalLogs, msg.data],
+            terminalLogs: [...state.terminalLogs, terminalLine],
           }));
+        }
+
+        // Direct Helios site-generator artifact stream.
+        if (msg.type === "artifact") {
+          const payload = artifactPayload(msg);
+          set((state) => upsertArtifactState(state, payload, "helios"));
         }
 
         // Handle file information
-        if (msg.type === 'file') {
-          const fileData = (msg as any).data as { filename: string; language: string; path: string };
-          set((state) => ({
-            projectFiles: [...state.projectFiles, fileData.filename],
-          }));
+        if (msg.type === "file" && isRecord(msg.data)) {
+          const filename = nonEmptyString(msg.data.filename);
+          if (filename) {
+            set((state) => ({
+              projectFiles: state.projectFiles.includes(filename)
+                ? state.projectFiles
+                : [...state.projectFiles, filename],
+            }));
+          }
         }
 
         // Handle per-call token usage (streamed from backend)
-        if (msg.type === 'token_usage') {
+        if (msg.type === "token_usage") {
           const entry = msg.data as unknown as TokenUsageEntry;
           if (entry && typeof entry.input_tokens === 'number') {
             const newEntry: TokenUsageEntry = {
-              office: entry.office ?? 'unknown',
+              office: entry.office ?? "unknown",
               input_tokens: entry.input_tokens,
               output_tokens: entry.output_tokens,
               cost_usd: entry.cost_usd,
@@ -400,43 +534,48 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         }
 
         // Handle cost optimizer text updates
-        if (msg.type === 'cost_update') {
+        if (msg.type === "cost_update" && typeof msg.data === "string") {
+          const costMessage = msg.data;
           set((state) => ({
-            costMessages: [...state.costMessages, msg.data],
+            costMessages: [...state.costMessages, costMessage],
           }));
         }
 
         // Handle completion
-        if (msg.type === 'complete') {
-          const files = (msg as any).files as string[] | undefined;
+        if (msg.type === "complete") {
+          const files = Array.isArray(msg.files)
+            ? msg.files.filter((file): file is string => typeof file === "string")
+            : undefined;
           set((state) => ({
             chatMessages: [
               ...state.chatMessages,
               {
                 id: `msg-${Date.now()}`,
-                author: 'Helios',
-                avatar: 'GR',
-                content: msg.data,
+                author: "Helios",
+                avatar: "HE",
+                content: typeof msg.data === "string" ? msg.data : "Generation complete.",
                 timestamp: new Date(),
                 isUser: false,
               },
             ],
-            projectGithubUrl: msg.githubUrl || null,
-            projectName: msg.projectName || null,
-            projectFiles: files || state.projectFiles,
+            projectGithubUrl: nonEmptyString(msg.githubUrl) ?? null,
+            projectName: nonEmptyString(msg.projectName) ?? null,
+            projectFiles: files
+              ? Array.from(new Set([...state.projectFiles, ...files]))
+              : state.projectFiles,
           }));
         }
 
         // Handle errors
-        if (msg.type === 'error') {
+        if (msg.type === "error") {
           set((state) => ({
             chatMessages: [
               ...state.chatMessages,
               {
                 id: `msg-${Date.now()}`,
-                author: 'Helios',
-                avatar: 'GR',
-                content: msg.data,
+                author: "Helios",
+                avatar: "HE",
+                content: typeof msg.data === "string" ? msg.data : "The site generator reported an error.",
                 timestamp: new Date(),
                 isUser: false,
               },
@@ -573,57 +712,7 @@ function handleEnvelope(
 
         /* A specialist generated a code artifact */
         case "CODE_ARTIFACT": {
-          const artifactId =
-            (payload.id as string) ??
-            `art-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-          const filename = (payload.filename as string) ?? "untitled";
-          const language = (payload.language as string) ?? "typescript";
-          const code = (payload.code as string) ?? "";
-          const artType = (payload.artifactType as string) ?? (payload.type as string) ?? "component";
-          const componentName = (payload.componentName as string) ?? undefined;
-          const wrapper = env.src ?? "unknown";
-          const progress = (payload.progress as number) ?? 100;
-          const status = progress >= 100 ? "complete" : "streaming";
-
-          set((state) => {
-            const existing = state.artifacts.findIndex((a) => a.id === artifactId);
-            let newArtifacts: CodeArtifact[];
-
-            if (existing >= 0) {
-              // Update existing artifact (streaming progress)
-              newArtifacts = [...state.artifacts];
-              newArtifacts[existing] = {
-                ...newArtifacts[existing],
-                code,
-                progress,
-                status,
-              };
-            } else {
-              // New artifact
-              newArtifacts = [
-                ...state.artifacts,
-                {
-                  id: artifactId,
-                  filename,
-                  language,
-                  code,
-                  type: artType,
-                  wrapper,
-                  agent: wrapper,
-                  timestamp: new Date(),
-                  status,
-                  progress,
-                  componentName,
-                },
-              ];
-            }
-
-            return {
-              artifacts: newArtifacts,
-              // Auto-select the first artifact if none selected
-              activeArtifactId: state.activeArtifactId ?? artifactId,
-            };
-          });
+          set((state) => upsertArtifactState(state, payload, env.src ?? "unknown"));
           break;
         }
 

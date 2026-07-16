@@ -17,6 +17,9 @@ class GatewayConfig:
     upstream_token: str | None
     client_token: str | None
     allow_readonly_demo: bool
+    environment: str = "development"
+    allowed_origin: str | None = None
+    allow_local_client: bool = False
     default_repository_url: str | None = None
     max_message_bytes: int = 16_384
     max_prompt_chars: int = 8_192
@@ -28,10 +31,23 @@ class GatewayConfig:
 
     @classmethod
     def from_environment(cls) -> GatewayConfig:
+        environment = os.getenv("ENVIRONMENT", "development")
         return cls(
-            control_plane_url=os.getenv("HERMES_CONTROL_PLANE_URL"),
-            upstream_token=os.getenv("HERMES_GATEWAY_UPSTREAM_TOKEN"),
+            control_plane_url=(
+                os.getenv("HERMES_CONTROL_PLANE_URL") or os.getenv("CONTROL_PLANE_URL")
+            ),
+            upstream_token=(
+                os.getenv("HERMES_GATEWAY_UPSTREAM_TOKEN")
+                or os.getenv("GATEWAY_BEARER_TOKEN")
+            ),
             client_token=os.getenv("HERMES_GATEWAY_CLIENT_TOKEN"),
             allow_readonly_demo=_bool("HERMES_ALLOW_READONLY_DEMO"),
+            environment=environment,
+            allowed_origin=(
+                os.getenv("HERMES_ALLOWED_ORIGIN")
+                or os.getenv("HELIOS_ALLOWED_ORIGIN")
+                or os.getenv("APP_URL")
+            ),
+            allow_local_client=_bool("HERMES_ALLOW_LOCAL_CLIENT", environment == "development"),
             default_repository_url=os.getenv("HERMES_DEFAULT_REPOSITORY_URL"),
         )

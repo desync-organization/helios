@@ -4,6 +4,7 @@ import { EpochMs, ShortText, externalObject } from "./common";
 export const RepoSlug = z.string().regex(/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/);
 export const RepositoryVisibility = z.enum(["public", "private", "internal"]);
 export const ProviderName = z.enum(["workers_ai", "haiku", "linkup", "osv", "github_advisory", "elevenlabs"]);
+export const ScannerName = z.enum(["bandit", "gitleaks", "semgrep", "trivy", "npm", "pip-audit"]);
 export const RepositoryAction = z.enum([
   "comment", "labels_set", "milestone_set", "duplicate_close", "branch_and_pr",
   "pr_review_comment", "pr_merge", "release_draft", "policy_commit", "eval_case_commit",
@@ -24,8 +25,10 @@ export const RepositoryDescriptor = externalObject({
   visibility: RepositoryVisibility,
   writebackOptIn: z.boolean(),
   securityAuditOptIn: z.boolean(),
+  trustedLocalExecution: z.boolean().default(false),
   allowedActions: z.array(RepositoryAction).max(20),
   allowedCloudProviders: z.array(ProviderName).max(10),
+  allowedScanners: z.array(ScannerName).max(10).default([]),
   protectedPaths: z.array(z.string().min(1).max(512)).max(100),
   sizeLimits: z.object({ maxPatchBytes: z.number().int().positive().max(10_000_000), maxFiles: z.number().int().positive().max(1_000) }).strict(),
   requiredChecks: z.array(ShortText).max(100),

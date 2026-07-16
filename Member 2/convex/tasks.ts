@@ -45,8 +45,69 @@ export const finish = internalMutation({
     const task = await ctx.db.query("tasks").withIndex("by_task_id", (q) => q.eq("taskId", args.taskId)).unique();
     if (!task || task.leaseOwnerId !== args.ownerId || task.leaseTokenHash !== args.leaseTokenHash || !task.leaseExpiresAt || task.leaseExpiresAt <= args.now) return { ok: false, reason: "LOST_LEASE" };
     if (args.status === "done" && (args.resultUrls.length === 0 || args.resultUrls.some((url) => !url.startsWith("https://")))) return { ok: false, reason: "RESULT_URL_REQUIRED" };
-    await ctx.db.patch(task._id, { status: args.status, resultUrls: args.resultUrls, error: args.error, leaseOwnerId: undefined, leaseTokenHash: undefined, leaseAcquiredAt: undefined, leaseHeartbeatAt: undefined, leaseExpiresAt: undefined, updatedAt: args.now });
+    await ctx.db.patch(task._id, { status: args.status, resultUrls: args.resultUrls, error: args.error, activeRunId: undefined, leaseOwnerId: undefined, leaseTokenHash: undefined, leaseAcquiredAt: undefined, leaseHeartbeatAt: undefined, leaseExpiresAt: undefined, updatedAt: args.now });
     return { ok: true };
+  },
+});
+
+export const escalate = internalMutation({
+  args: {
+    taskId: v.string(),
+    ownerId: v.string(),
+    leaseTokenHash: v.string(),
+    runId: v.optional(v.string()),
+    artifactIds: v.array(v.string()),
+    resultUrls: v.array(v.string()),
+    error: v.optional(v.any()),
+    reason: v.string(),
+    restricted: v.boolean(),
+    reviewItemId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.query("tasks").withIndex("by_task_id", (q) => q.eq("taskId", args.taskId)).unique();
+    if (!task || task.leaseOwnerId !== args.ownerId || task.leaseTokenHash !== args.leaseTokenHash || !task.leaseExpiresAt || task.leaseExpiresAt <= args.now) return { ok: false, reason: "LOST_LEASE" };
+    if (args.resultUrls.some((url) => !url.startsWith("https://"))) return { ok: false, reason: "INVALID_RESULT_URL" };
+    for (const artifactId of args.artifactIds) {
+      const artifact = await ctx.db.query("artifacts").withIndex("by_artifact_id", (q) => q.eq("artifactId", artifactId)).unique();
+      if (!artifact || artifact.taskId !== args.taskId || (args.runId && artifact.runId !== args.runId)) return { ok: false, reason: "ARTIFACT_SCOPE_MISMATCH" };
+    }
+    if (args.runId) {
+      const run = await ctx.db.query("runs").withIndex("by_run_id", (q) => q.eq("runId", args.runId!)).unique();
+      if (!run || run.taskId !== args.taskId) return { ok: false, reason: "RUN_SCOPE_MISMATCH" };
+      await ctx.db.patch(run._id, {
+        status: "escalated",
+        finishedAt: args.now,
+        resultUrls: args.resultUrls,
+        error: args.error,
+      });
+    }
+    await ctx.db.insert("reviewItems", {
+      reviewItemId: args.reviewItemId,
+      repo: task.repo,
+      taskId: args.taskId,
+      ...(args.runId ? { runId: args.runId } : {}),
+      kind: args.restricted ? "private_security_report" : "runtime_escalation",
+      restricted: args.restricted,
+      status: "pending",
+      reasonRedacted: args.reason,
+      artifactIds: args.artifactIds,
+      createdAt: args.now,
+      updatedAt: args.now,
+    });
+    await ctx.db.patch(task._id, {
+      status: "escalated",
+      resultUrls: args.resultUrls,
+      error: args.error,
+      activeRunId: undefined,
+      leaseOwnerId: undefined,
+      leaseTokenHash: undefined,
+      leaseAcquiredAt: undefined,
+      leaseHeartbeatAt: undefined,
+      leaseExpiresAt: undefined,
+      updatedAt: args.now,
+    });
+    return { ok: true, reviewItemId: args.reviewItemId };
   },
 });
 

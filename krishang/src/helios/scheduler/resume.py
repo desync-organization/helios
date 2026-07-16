@@ -6,6 +6,19 @@ def completed_nodes(cache: LocalRunCache | None, run_id: str) -> set[str]:
     return set(state.get("completedNodes", [])) if state else set()
 
 
-def save_progress(cache: LocalRunCache | None, run_id: str, completed: set[str], artifacts: dict[str, str]) -> None:
+def save_progress(
+    cache: LocalRunCache | None,
+    run_id: str,
+    completed: set[str],
+    artifacts: dict[str, str],
+    plan_identity: dict[str, str],
+) -> None:
     if cache:
-        cache.save(run_id, {"completedNodes": sorted(completed), "artifacts": artifacts})
+        cache.save(
+            run_id,
+            {
+                "completedNodes": sorted(completed),
+                "artifacts": artifacts,
+                "planIdentity": plan_identity,
+            },
+        )

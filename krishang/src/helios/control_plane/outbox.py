@@ -9,6 +9,7 @@ class IdempotentOutbox:
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.dead_letter_path = self.path.with_suffix(".deadletter.jsonl")
         self._lock = asyncio.Lock()
 
     async def append(self, record_id: str, kind: str, payload: dict[str, Any]) -> None:
@@ -20,13 +21,37 @@ class IdempotentOutbox:
         if not self.path.exists():
             return 0
         async with self._lock:
-            records = [json.loads(line) for line in self.path.read_text(encoding="utf-8").splitlines() if line]
+            records: list[dict[str, Any]] = []
+            malformed: list[dict[str, Any]] = []
+            for line_number, line in enumerate(self.path.read_text(encoding="utf-8").splitlines(), start=1):
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                    if not isinstance(record, dict) or not isinstance(record.get("id"), str):
+                        raise ValueError("record must be an object with a string id")
+                    records.append(record)
+                except (json.JSONDecodeError, ValueError) as exc:
+                    malformed.append({"line": line_number, "error": str(exc)[:500], "raw": line[:8_192]})
+            if malformed:
+                with self.dead_letter_path.open("a", encoding="utf-8") as handle:
+                    for record in malformed:
+                        handle.write(json.dumps(record, default=str) + "\n")
             sent: set[str] = set()
-            for record in records:
+            remaining: list[dict[str, Any]] = []
+            for index, record in enumerate(records):
                 if record["id"] in sent:
                     continue
-                await sender(record)
+                try:
+                    await sender(record)
+                except Exception:
+                    remaining = [record, *records[index + 1:]]
+                    break
                 sent.add(record["id"])
-            self.path.write_text("", encoding="utf-8")
+            temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+            temporary.write_text(
+                "".join(json.dumps(record, default=str) + "\n" for record in remaining),
+                encoding="utf-8",
+            )
+            temporary.replace(self.path)
             return len(sent)
-

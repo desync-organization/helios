@@ -1,7 +1,7 @@
 [project]
 name = "helios-runtime"
 version = "0.1.0"
-description = "Credential-free Helios execution plane for the Hermes maintainer agency"
+description = "Credential-free standalone Helios execution plane"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",
@@ -11,10 +11,11 @@ dependencies = [
   "psutil>=6.0",
   "pyyaml>=6.0",
   "uvicorn>=0.30",
+  "websockets>=13.0",
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8.3", "pytest-asyncio>=0.24"]
+test = ["bandit>=1.8,<2", "pytest>=8.3", "pytest-asyncio>=0.24"]
 
 [project.scripts]
 helios-runtime = "helios.main:cli"
@@ -30,4 +31,3 @@ packages = ["src/helios"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-

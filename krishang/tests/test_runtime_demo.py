@@ -6,5 +6,6 @@ async def test_all_three_modes_run_on_one_kernel():
     assert result["runs"] == 3
     assert len(result["intents"]) == 3
     assert {item["action"] for item in result["intents"]} == {"issue_update", "branch_pr", "private_security_report"}
+    assert result["submittedIntents"] == 0
+    assert result["provenance"] == "dry-run"
     assert result["events"] > 20
-

@@ -180,7 +180,7 @@ export function ChatPage() {
 
   /** Auto-connect to the orchestrator when the chat page mounts. */
   const ORCHESTRATOR_URL =
-    process.env.NEXT_PUBLIC_ORCHESTRATOR_URL ?? "ws://localhost:9100";
+    process.env.NEXT_PUBLIC_ORCHESTRATOR_URL ?? "ws://127.0.0.1:8788/ws";
 
   useEffect(() => {
     if (!connected) connect(ORCHESTRATOR_URL);
@@ -323,7 +323,7 @@ export function ChatPage() {
               <Bot className="w-8 h-8 mb-2 opacity-40" />
               <p>Tell Helios what to build…</p>
               <p className="text-xs mt-1 opacity-60">
-                Your request will be routed to the right AI agents.
+                Your request is interpreted locally and compiled into a working site.
               </p>
             </div>
           )}
@@ -349,7 +349,7 @@ export function ChatPage() {
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleUserSend()}
-              placeholder="Paste an allowlisted GitHub issue or PR URL..."
+              placeholder="Describe the website you want Helios to build..."
               className="flex-1"
             />
             <Button onClick={handleUserSend} size="icon">

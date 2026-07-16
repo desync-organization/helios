@@ -9,6 +9,7 @@ import {
   type MotionValue,
 } from "framer-motion";
 import {
+  Code2,
   LayoutGrid,
   MessageSquare,
   Terminal,
@@ -113,6 +114,12 @@ export function Navbar({
       label: "Communication Hub",
       icon: MessageSquare,
       onClick: () => onViewChange("chat"),
+    },
+    {
+      id: "workstation",
+      label: "Workstation",
+      icon: Code2,
+      onClick: () => onViewChange("workstation"),
     },
     {
       id: "terminal",

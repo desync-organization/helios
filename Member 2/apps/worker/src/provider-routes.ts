@@ -25,12 +25,14 @@ async function callConfiguredProvider(env: WorkerEnv, body: ProxyBody, provider:
 export async function handleProviderProxy(request: Request, env: WorkerEnv, kind: "inference" | "research"): Promise<Response> {
   await requireBearer(request, env.PROVIDER_PROXY_TOKEN);
   const body = await readBoundedJson<ProxyBody>(request, 131_072);
-  if (!body.taskId || !body.repo || !body.purpose || typeof body.content !== "string") throw new ControlPlaneError("VALIDATION_FAILED", "Missing provider request fields", 422, false);
+  if (!body.taskId || !body.repo || !body.purpose || typeof body.content !== "string" || typeof body.provider !== "string") throw new ControlPlaneError("VALIDATION_FAILED", "An explicit provider and all request fields are required", 422, false);
   const authorized = await authorizeProvider(env, { schemaVersion: 1, taskId: body.taskId, repo: body.repo, purpose: body.purpose, requestedProvider: body.provider, kind });
   if (authorized.allowed !== true) throw new ControlPlaneError("FORBIDDEN", "Canonical consent denied this provider request", 403, false);
   const redacted = await redactSensitive(body.content, true);
   if (new TextEncoder().encode(redacted.value).byteLength > 131_072) throw new ControlPlaneError("TOO_LARGE", "Provider content exceeds limit", 413, false);
-  const providers = kind === "research" ? ["linkup"] as const : ["workers_ai", "haiku"] as const;
+  const allowedForKind = kind === "research" ? ["linkup"] : ["workers_ai", "haiku"];
+  if (!allowedForKind.includes(body.provider) || !Array.isArray(authorized.providers) || !authorized.providers.includes(body.provider)) throw new ControlPlaneError("FORBIDDEN", "Requested provider is not consented for this operation", 403, false);
+  const providers = [body.provider] as Array<"workers_ai" | "haiku" | "linkup">;
   let lastError: unknown;
   for (const provider of providers) {
     try {

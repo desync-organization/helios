@@ -39,7 +39,7 @@ export const createTaskDraft = internalMutation({
       status: "pending",
       dedupeKey: `operator:${args.idempotencyKey}`,
       requestedBy: "operator",
-      consentScope: { repo, allowedActions: repository.allowedActions, allowedCloudProviders: repository.visibility === "public" ? repository.allowedCloudProviders : [], privateCodeMayLeaveDevice: false, externalSecurityUploadAllowed: false, expiresAt, grantedBy: "operator", consentRef: `operator:${args.idempotencyKey}` },
+      consentScope: { repo, allowedActions: repository.allowedActions, allowedCloudProviders: repository.visibility === "public" ? repository.allowedCloudProviders : [], allowedScanners: repository.securityAuditOptIn ? repository.allowedScanners ?? [] : [], privateCodeMayLeaveDevice: false, externalSecurityUploadAllowed: false, expiresAt, grantedBy: "operator", consentRef: `operator:${args.idempotencyKey}` },
       dataClassification: repository.visibility === "public" ? "public" : "private",
       policyVersion: repository.activePolicyVersion,
       resultUrls: [],
@@ -54,9 +54,11 @@ export const eventsAfter = internalQuery({
   args: { after: v.optional(v.string()), limit: v.number() },
   handler: async (ctx, args) => {
     const after = args.after ? await ctx.db.query("eventFeed").withIndex("by_event_id", (q) => q.eq("eventId", args.after!)).unique() : null;
-    const values = await ctx.db.query("eventFeed").withIndex("by_created", (q) => after ? q.gte("createdAt", after.createdAt) : q).order("asc").take(Math.min(Math.max(args.limit, 1), 500));
+    const query = ctx.db.query("eventFeed");
+    const values = await (after ? query.filter((q) => q.gt(q.field("_creationTime"), after._creationTime)) : query)
+      .order("asc")
+      .take(Math.min(Math.max(args.limit, 1), 500));
     return values
-      .filter((event) => !after || event.createdAt > after.createdAt || event.eventId !== after.eventId)
       .map(({ _id: _rawId, _creationTime: _rawCreationTime, ...event }) => event);
   },
 });

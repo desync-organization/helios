@@ -12,22 +12,39 @@ from .training import run_training, training_plan
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="helios-slm", description="Helios web SLM training tools")
+    parser = argparse.ArgumentParser(
+        prog="helios-slm", description="Helios web SLM training tools"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
-    inspect = commands.add_parser("inspect", help="validate and print a training plan without loading ML libraries")
+    inspect = commands.add_parser(
+        "inspect",
+        help="validate and print a training plan without loading ML libraries",
+    )
     inspect.add_argument("config", type=Path)
-    validate = commands.add_parser("validate", help="validate train/validation data and write a dataset manifest")
+    validate = commands.add_parser(
+        "validate", help="validate train/validation data and write a dataset manifest"
+    )
     validate.add_argument("config", type=Path)
     validate.add_argument("--manifest", type=Path, required=True)
-    train = commands.add_parser("train", help="execute adapter training; may load local model weights")
+    train = commands.add_parser(
+        "train", help="execute adapter training; may load local model weights"
+    )
     train.add_argument("config", type=Path)
-    train.add_argument("--execute", action="store_true", help="required safety confirmation")
-    teacher = commands.add_parser("distill", help="generate examples with the configured local teacher")
+    train.add_argument(
+        "--execute", action="store_true", help="required safety confirmation"
+    )
+    teacher = commands.add_parser(
+        "distill", help="generate examples with the configured local teacher"
+    )
     teacher.add_argument("config", type=Path)
     teacher.add_argument("--source", type=Path, required=True)
     teacher.add_argument("--output", type=Path, required=True)
-    teacher.add_argument("--execute", action="store_true", help="required safety confirmation")
-    promote = commands.add_parser("promote", help="create a hash-bound runtime adapter manifest")
+    teacher.add_argument(
+        "--execute", action="store_true", help="required safety confirmation"
+    )
+    promote = commands.add_parser(
+        "promote", help="create a hash-bound runtime adapter manifest"
+    )
     promote.add_argument("config", type=Path)
     promote.add_argument("--adapter", type=Path, required=True)
     promote.add_argument("--base-model", type=Path, required=True)
@@ -47,8 +64,16 @@ def main() -> None:
     elif args.command == "validate":
         root = args.config.parent
         paths = [root / spec.data.train_path, root / spec.data.validation_path]
-        validate_pair(*paths, role=spec.role, require_teacher=spec.data.require_teacher_trace)
-        print(json.dumps(write_manifest(paths, args.manifest), indent=2, sort_keys=True))
+        validate_pair(
+            *paths,
+            role=spec.role,
+            require_teacher=spec.data.require_teacher_trace,
+            expected_teacher_id=spec.model.teacher_id,
+            expected_teacher_revision=spec.model.teacher_revision,
+        )
+        print(
+            json.dumps(write_manifest(paths, args.manifest), indent=2, sort_keys=True)
+        )
     elif args.command == "train":
         if not args.execute:
             raise SystemExit("refusing to load weights or train without --execute")

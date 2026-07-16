@@ -44,10 +44,40 @@ class HeadOrchestratorValidator:
         checks = ["output-is-object", "acceptance-criteria-present"]
         if not isinstance(content, dict) or not node.acceptance_criteria:
             raise HeadValidationError("agent output does not satisfy the typed handoff contract")
-        if node.output_artifact == ArtifactType.TEST_RESULT.value and content.get("success") is not True:
-            raise HeadValidationError("test agent did not produce an authoritative passing result")
-        if node.output_artifact == ArtifactType.SECURITY_REPORT.value and content.get("safe") is not True:
-            raise HeadValidationError("security agent did not clear the artifact")
+        if node.output_artifact == ArtifactType.TEST_RESULT.value:
+            if (content.get("authoritative") is not True or content.get("fabricated") is not False
+                    or not isinstance(content.get("results"), list)
+                    or content.get("status") not in {"passed", "failed", "not_configured"}):
+                raise HeadValidationError("test agent did not produce authoritative command evidence")
+            for result in content["results"]:
+                if not isinstance(result, dict) or not result.get("commandHash") or "exitCode" not in result:
+                    raise HeadValidationError("test evidence is missing a command hash or exit code")
+            checks.append("authoritative-test-evidence")
+        if node.output_artifact == ArtifactType.SECURITY_REPORT.value:
+            if (content.get("authoritative") is not True or content.get("fabricated") is not False
+                    or not isinstance(content.get("scannerResults"), list)
+                    or not isinstance(content.get("coverageComplete"), bool)
+                    or content.get("secretsRedacted") is not True):
+                raise HeadValidationError("security agent did not produce authoritative scanner evidence")
+            checks.extend(["authoritative-scanner-evidence", "secret-redaction-declared"])
+        if node.output_artifact in {
+            ArtifactType.REPOSITORY_INVENTORY.value,
+            ArtifactType.DEPENDENCY_INVENTORY.value,
+            ArtifactType.SARIF_REPORT.value,
+        } and content.get("authoritative") is not True:
+            raise HeadValidationError("repository evidence is not authoritative")
+        if node.output_artifact == ArtifactType.SARIF_REPORT.value and (
+            content.get("fabricated") is not False
+            or not isinstance(content.get("coverageComplete"), bool)
+            or not isinstance(content.get("scannerResults"), list)
+            or content.get("secretsRedacted") is not True
+        ):
+            raise HeadValidationError("scanner report is missing authoritative execution evidence")
+        if node.output_artifact == ArtifactType.PATCH.value:
+            if content.get("noChangesRequired") is not True and (
+                not isinstance(content.get("files"), list) or not content["files"]
+            ):
+                raise HeadValidationError("patch does not contain complete files")
         if node.output_artifact == ArtifactType.PACKAGE_RESULT.value and content.get("integrated") is not True:
             raise HeadValidationError("integration contains unresolved file ownership conflicts")
         if node.output_artifact == ArtifactType.BUILD_MANIFEST.value:
@@ -93,15 +123,38 @@ class HeadOrchestratorValidator:
             if content.get("verdict") not in {"pass", "revise", "blocked"} or content.get("independent") is not True:
                 raise HeadValidationError("critic verdict is invalid or not independent")
             upstream = upstream or []
-            reviewed = next((item for item in upstream if item.artifact_id == content.get("reviewedArtifactId")), None)
-            if (not reviewed or reviewed.content_hash != content.get("reviewedContentHash")
-                    or content.get("producerAgent") == content.get("criticAgent")):
+            records = content.get("reviewedArtifacts")
+            if records is None and len(upstream) == 1:
+                records = [{
+                    "artifactId": content.get("reviewedArtifactId"),
+                    "contentHash": content.get("reviewedContentHash"),
+                    "producerAgent": content.get("producerAgent"),
+                }]
+            if not isinstance(records, list) or len(records) != len(upstream):
+                raise HeadValidationError("critic did not review every direct upstream artifact")
+            expected = {
+                item.artifact_id: (item.content_hash, item.producer)
+                for item in upstream
+            }
+            actual: dict[str, tuple[str, str]] = {}
+            for record in records:
+                if not isinstance(record, dict) or not isinstance(record.get("artifactId"), str):
+                    raise HeadValidationError("critic lineage record is malformed")
+                artifact_id = record["artifactId"]
+                if artifact_id in actual:
+                    raise HeadValidationError("critic lineage contains a duplicate artifact")
+                actual[artifact_id] = (str(record.get("contentHash", "")), str(record.get("producerAgent", "")))
+            if actual != expected or any(producer == content.get("criticAgent") for _, producer in actual.values()):
                 raise HeadValidationError("critic identity or reviewed artifact proof is invalid")
-            producer_adapter = reviewed.content.get("modelProvenance", {}).get("adapterId")
             critic_adapter = content.get("modelProvenance", {}).get("adapterId")
-            if producer_adapter and producer_adapter == critic_adapter:
+            producer_adapters = {
+                item.content.get("modelProvenance", {}).get("adapterId")
+                for item in upstream
+                if item.content.get("modelProvenance", {}).get("adapterId")
+            }
+            if critic_adapter and critic_adapter in producer_adapters:
                 raise HeadValidationError("critic cannot use the producer's adapter")
-            checks.extend(["independent-critic-verdict", "critic-reviewed-content-hash"])
+            checks.extend(["independent-critic-verdict", "critic-reviewed-all-content-hashes"])
         return HeadValidationResult(valid=True, checks=checks, summary={
             "agent": node.expert, "artifactType": node.output_artifact,
             "acceptanceCriteriaCount": len(node.acceptance_criteria),

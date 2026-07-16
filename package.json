@@ -7,15 +7,15 @@
   ],
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "bun scripts/build-next.mjs",
     "start": "next start",
     "lint": "eslint",
-    "dev:services": "bun run --cwd \"Member 2\" dev:services",
+    "dev:services": "bun --env-file=.env run --cwd \"Member 2\" dev:services",
     "test": "bun run --cwd \"Member 2\" test",
     "test:contracts": "bun run --cwd \"Member 2\" test:contracts",
     "test:integration": "bun run --cwd \"Member 2\" test:integration",
-    "demo:seed": "bun run --cwd \"Member 2\" demo:seed",
-    "demo:check": "bun run --cwd \"Member 2\" demo:check",
+    "demo:seed": "bun --env-file=.env run --cwd \"Member 2\" demo:seed",
+    "demo:check": "bun --env-file=.env run --cwd \"Member 2\" demo:check",
     "deploy:worker": "bun run --cwd \"Member 2\" deploy:worker"
   },
   "dependencies": {

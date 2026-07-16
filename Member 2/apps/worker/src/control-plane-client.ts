@@ -4,17 +4,53 @@ import type { WorkerEnv } from "./types";
 
 async function controlRequest(env: WorkerEnv, path: string, body: unknown, token = env.CONTROL_PLANE_INGEST_TOKEN): Promise<Response> {
   const response = await fetch(`${env.CONTROL_PLANE_URL.replace(/\/$/, "")}${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
-  if (!response.ok) throw new ControlPlaneError("UPSTREAM_FAILED", `Control plane returned ${response.status}`, 502, response.status >= 500 || response.status === 429);
+  if (!response.ok) {
+    const payload = await response.clone().json().catch(() => ({})) as { error?: { code?: string; message?: string; retryable?: boolean } };
+    const code = response.status === 401 ? "UNAUTHENTICATED"
+      : response.status === 403 ? "POLICY_DENIED"
+        : response.status === 409 ? "CONFLICT"
+          : response.status === 413 ? "TOO_LARGE"
+            : response.status === 422 ? "VALIDATION_FAILED"
+              : response.status === 429 ? "RATE_LIMITED"
+                : "UPSTREAM_FAILED";
+    throw new ControlPlaneError(code, payload.error?.message ?? `Control plane returned ${response.status}`, response.status, payload.error?.retryable ?? (response.status >= 500 || response.status === 429), payload.error?.code ? { reasonCode: payload.error.code } : undefined);
+  }
   return response;
 }
 
-export async function reserveWriteback(env: WorkerEnv, intent: unknown, leaseToken: string): Promise<{ installationId: string; defaultBranch: string }> {
+export interface WritebackReservation {
+  ok: boolean;
+  replay: boolean;
+  status: "pending" | "dry_run" | "completed";
+  reason?: string;
+  installationId?: string;
+  defaultBranch?: string;
+  resultUrl?: string;
+  externalId?: string;
+  policyDecision?: {
+    allowed: boolean;
+    reasonCode: string;
+    message: string;
+    ruleIds: string[];
+  };
+}
+
+export async function reserveWriteback(env: WorkerEnv, intent: unknown, leaseToken: string): Promise<WritebackReservation> {
   const response = await controlRequest(env, "/writeback/reserve", { intent, leaseToken });
-  return response.json() as Promise<{ installationId: string; defaultBranch: string }>;
+  return response.json() as Promise<WritebackReservation>;
 }
 
 export async function completeWriteback(env: WorkerEnv, writebackId: string, resultUrl: string, externalId: string): Promise<void> {
-  await controlRequest(env, "/writeback/complete", { writebackId, resultUrl, externalId });
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try { await controlRequest(env, "/writeback/complete", { writebackId, resultUrl, externalId }); return; }
+    catch (error) {
+      lastError = error;
+      if (!(error instanceof ControlPlaneError) || !error.retryable || attempt === 4) break;
+      await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** attempt));
+    }
+  }
+  throw lastError;
 }
 
 export async function failWriteback(env: WorkerEnv, writebackId: string, message: string): Promise<void> {

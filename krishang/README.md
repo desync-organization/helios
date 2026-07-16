@@ -1,24 +1,27 @@
 # Helios Runtime
 
-The credential-free, on-device execution plane for Hermes. One planner/scheduler/artifact kernel
-supports GitHub maintenance, bounded product building, and defensive repository security audits.
+The credential-free, on-device Helios execution plane. One planner/scheduler/artifact kernel supports
+repository maintenance, bounded product building, and defensive repository security audits without
+requiring an external agency service.
 
 ## Setup
 
 Requires Python 3.12+.
 
-```bash
+```powershell
 python -m venv .venv
-.venv/Scripts/pip install -e ".[test]"
-python -m helios.models.bootstrap
-pytest tests -q
-python -m helios.demo.seed_runtime
-python -m helios.main
+.\.venv\Scripts\python -m pip install -e ".[test]"
+Copy-Item .env.example .env
+.\.venv\Scripts\python -m helios.models.bootstrap
+.\.venv\Scripts\python -m pytest tests -q
+.\.venv\Scripts\python -m helios.demo.seed_runtime
+.\.venv\Scripts\python -m helios.main
 ```
 
 The runtime never accepts GitHub or provider credentials. It returns schema-versioned,
-idempotent write-back intents to the control plane. Without `CONVEX_HTTP_URL`, it uses the
-in-memory control-plane adapter for independent development.
+idempotent write-back intents when an external control plane is configured. Helios loads only the
+local `krishang/.env`; without `WORKER_URL`, `CONTROL_PLANE_URL`, or `CONVEX_HTTP_URL`, it uses the
+in-memory adapter and runs independently.
 
 ## Agent reservoir
 

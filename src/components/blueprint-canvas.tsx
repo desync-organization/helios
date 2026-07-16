@@ -239,8 +239,8 @@ const nodeTypes = { office: OfficeNode };
 
 const ORCHESTRATOR_URL =
   typeof window !== "undefined"
-    ? (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL ?? "ws://localhost:9100")
-    : "ws://localhost:9100";
+    ? (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL ?? "ws://127.0.0.1:8788/ws")
+    : "ws://127.0.0.1:8788/ws";
 
 /** Layout helpers to auto-place wrappers in a grid. */
 function buildLiveGraph(wrappers: Record<string, WrapperInfo>): {

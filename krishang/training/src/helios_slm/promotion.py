@@ -7,6 +7,7 @@ from typing import Any
 
 from .config import SpecialistSpec, require_pinned_models
 from .dataset import sha256_file
+from .evaluation import load_passing_eval_report
 
 
 def create_promotion_manifest(
@@ -21,12 +22,21 @@ def create_promotion_manifest(
     destination: Path,
 ) -> dict[str, Any]:
     require_pinned_models(spec)
-    required = (adapter_path, base_model_path, tokenizer_path, dataset_manifest_path, eval_report_path)
+    required = (
+        adapter_path,
+        base_model_path,
+        tokenizer_path,
+        dataset_manifest_path,
+        eval_report_path,
+    )
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
         raise FileNotFoundError("promotion inputs are missing: " + ", ".join(missing))
     if adapter_path.suffix.lower() != ".gguf":
-        raise ValueError("runtime promotion requires a llama.cpp-compatible GGUF LoRA adapter")
+        raise ValueError(
+            "runtime promotion requires a llama.cpp-compatible GGUF LoRA adapter"
+        )
+    load_passing_eval_report(eval_report_path)
     payload = {
         "adapterId": spec.adapter.adapter_id,
         "adapterVersion": spec.adapter.adapter_version,
@@ -52,6 +62,8 @@ def create_promotion_manifest(
     }
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     temporary.replace(destination)
     return payload

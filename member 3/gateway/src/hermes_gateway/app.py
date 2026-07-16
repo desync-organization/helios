@@ -69,8 +69,18 @@ def create_app(
     async def consume_events() -> None:
         async for event in upstream.events():
             if hub.sequence_gap(event):
-                for replayed in await upstream.replay_after(None):
-                    await hub.publish(replayed)
+                cursor = hub.last_event_id(event.run_id)
+                for _ in range(10):
+                    replay = await upstream.replay_after(cursor)
+                    if not replay:
+                        break
+                    for replayed in replay:
+                        await hub.publish(replayed)
+                    cursor = replay[-1].event_id
+                    if not hub.sequence_gap(event):
+                        break
+                if hub.sequence_gap(event):
+                    continue
             await hub.publish(event)
 
     @asynccontextmanager
@@ -87,8 +97,17 @@ def create_app(
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
-        configured = not isinstance(upstream, UnavailableControlPlane)
-        return {"status": "ready" if configured else "degraded", "canonicalSource": "control-plane"}
+        if isinstance(upstream, UnavailableControlPlane):
+            return {"status": "degraded", "canonicalSource": "unavailable"}
+        try:
+            await asyncio.wait_for(upstream.statuses(), timeout=2)
+        except Exception as exc:
+            return {
+                "status": "degraded",
+                "canonicalSource": "control-plane",
+                "reason": type(exc).__name__,
+            }
+        return {"status": "ready", "canonicalSource": "control-plane"}
 
     @app.get("/status")
     async def wrapper_status() -> dict[str, Any]:
@@ -119,7 +138,31 @@ def create_app(
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
         supplied = websocket.query_params.get("ticket") or websocket.query_params.get("token")
-        can_create = authenticated(supplied, settings.client_token)
+        origin = websocket.headers.get("origin")
+        local_development_origin = bool(
+            origin
+            and settings.environment == "development"
+            and (
+                origin.startswith("http://127.0.0.1:")
+                or origin.startswith("http://localhost:")
+            )
+        )
+        origin_allowed = (
+            not settings.allowed_origin
+            or origin == settings.allowed_origin
+            or local_development_origin
+        )
+        if origin and not origin_allowed:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        client_host = websocket.client.host if websocket.client else ""
+        local_client = (
+            settings.allow_local_client
+            and settings.environment == "development"
+            and client_host in {"127.0.0.1", "::1", "localhost", "testclient"}
+            and origin_allowed
+        )
+        can_create = authenticated(supplied, settings.client_token) or local_client
         if not can_create and not settings.allow_readonly_demo:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
@@ -152,8 +195,9 @@ def create_app(
         heartbeat = asyncio.create_task(send_heartbeats())
         last_event_id = websocket.query_params.get("lastEventId")
         try:
-            for event in await upstream.replay_after(last_event_id):
-                await connection.send_event(event.model_copy(update={"data_class": "replayed"}))
+            if last_event_id:
+                for event in await upstream.replay_after(last_event_id):
+                    await connection.send_event(event.model_copy(update={"data_class": "replayed"}))
             while True:
                 raw = await websocket.receive_text()
                 if len(raw.encode("utf-8")) > settings.max_message_bytes:

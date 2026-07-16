@@ -95,6 +95,16 @@ GET  /runtime/control
 GET  /runtime/config/agents
 ```
 
+`GET /runtime/control` always returns the complete camel-case control snapshot, including safe
+`dry-run`/`read-only` defaults before the first operator update. A dry-run write-back is persisted as
+`status: "dry_run"` and returned with HTTP 200; the Worker does not mint an installation token or call
+GitHub. Completed idempotent replays return their original result URL without repeating the mutation.
+
+`POST /runtime/task/escalate` keeps the original task/owner/lease fields and also accepts optional
+`runId`, `artifactIds`, `reason`, and `restricted`. It verifies artifact ownership and stores a durable
+review item; restricted security reports never become public GitHub issues. Approved private
+remediation remains the separately policy-gated `security_pr` action.
+
 Member 3 consumes the canonical `eventFeed` by `(runId, sequence)` and deduplicates by `eventId`. Stored
 events label live/dry-run/fixture/replay provenance and preserve actual cost separately from cloud
 equivalent cost. A task cannot finish successfully without a persisted HTTPS result URL.

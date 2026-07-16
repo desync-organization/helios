@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BodyText, DataClassification, EpochMs, HttpsUrl, ShortText, externalObject } from "./common";
 import { BacklogBatchId, TaskId } from "./ids";
-import { ProviderName, RepoSlug, RepositoryAction } from "./repository";
+import { ProviderName, RepoSlug, RepositoryAction, ScannerName } from "./repository";
 
 export const HermesMode = z.enum(["maintain", "build", "security_audit"]);
 export const TaskType = z.enum([
@@ -21,6 +21,7 @@ export const ConsentScope = z.object({
   repo: RepoSlug,
   allowedActions: z.array(RepositoryAction).max(20),
   allowedCloudProviders: z.array(ProviderName).max(10),
+  allowedScanners: z.array(ScannerName).max(10).default([]),
   privateCodeMayLeaveDevice: z.boolean(),
   externalSecurityUploadAllowed: z.boolean().default(false),
   expiresAt: EpochMs,

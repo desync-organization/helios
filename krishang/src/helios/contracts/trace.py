@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -26,6 +26,7 @@ class CanonicalEvent(WireModel):
     task_id: str | None = None
     run_id: str | None = None
     span_id: str | None = None
+    label: Literal["live", "dry-run", "degraded", "replayed", "fixture"] = "live"
     payload: dict[str, Any] = Field(default_factory=dict)
     redaction_level: RedactionLevel = RedactionLevel.INTERNAL
 

@@ -1,11 +1,9 @@
-import importlib
+from .member3 import run_member3_cli
 
 
 def main() -> None:
-    evaluator = importlib.import_module("helios_member3_evals")
-    evaluator.main()
+    run_member3_cli()
 
 
 if __name__ == "__main__":
     main()
-

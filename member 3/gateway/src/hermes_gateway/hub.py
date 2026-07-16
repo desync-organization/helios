@@ -31,6 +31,7 @@ class EventHub:
         self._connections: set[Connection] = set()
         self._buffer: deque[CanonicalEvent] = deque(maxlen=buffer_size)
         self._last_sequence_by_run: dict[str, int] = {}
+        self._last_event_id_by_run: dict[str, str] = {}
 
     def add(self, connection: Connection) -> None:
         self._connections.add(connection)
@@ -44,12 +45,16 @@ class EventHub:
         previous = self._last_sequence_by_run.get(event.run_id)
         return previous is not None and event.sequence > previous + 1
 
+    def last_event_id(self, run_id: str | None) -> str | None:
+        return self._last_event_id_by_run.get(run_id) if run_id else None
+
     async def publish(self, event: CanonicalEvent) -> None:
         if event.run_id:
             previous = self._last_sequence_by_run.get(event.run_id, -1)
             if event.sequence <= previous:
                 return
             self._last_sequence_by_run[event.run_id] = event.sequence
+            self._last_event_id_by_run[event.run_id] = event.event_id
         if any(buffered.event_id == event.event_id for buffered in self._buffer):
             return
         self._buffer.append(event)

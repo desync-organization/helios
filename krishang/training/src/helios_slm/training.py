@@ -24,11 +24,19 @@ def training_plan(spec: SpecialistSpec, config_path: Path) -> dict[str, Any]:
 
 def _to_text(record: DatasetRecord, tokenizer: Any) -> str:
     messages = [
-        {"role": "system", "content": f"You are the bounded Helios {record.role} specialist."},
-        {"role": "user", "content": record.instruction + "\nContext:\n" + str(record.context)},
+        {
+            "role": "system",
+            "content": f"You are the bounded Helios {record.role} specialist.",
+        },
+        {
+            "role": "user",
+            "content": record.instruction + "\nContext:\n" + str(record.context),
+        },
         {"role": "assistant", "content": record.response},
     ]
-    return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+    return tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=False
+    )
 
 
 def run_training(spec: SpecialistSpec, config_path: Path) -> Path:
@@ -51,6 +59,8 @@ def run_training(spec: SpecialistSpec, config_path: Path) -> Path:
         root / spec.data.validation_path,
         role=spec.role,
         require_teacher=spec.data.require_teacher_trace,
+        expected_teacher_id=spec.model.teacher_id,
+        expected_teacher_revision=spec.model.teacher_revision,
     )
     tokenizer = AutoTokenizer.from_pretrained(
         spec.model.student_id,
@@ -76,7 +86,9 @@ def run_training(spec: SpecialistSpec, config_path: Path) -> Path:
         device_map="auto",
     )
     if quantization_config:
-        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=spec.training.gradient_checkpointing)
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=spec.training.gradient_checkpointing
+        )
     peft_config = LoraConfig(
         r=spec.adapter.rank,
         lora_alpha=spec.adapter.alpha,
@@ -85,8 +97,12 @@ def run_training(spec: SpecialistSpec, config_path: Path) -> Path:
         task_type="CAUSAL_LM",
         bias="none",
     )
-    train_dataset = Dataset.from_dict({"text": [_to_text(item, tokenizer) for item in train]})
-    eval_dataset = Dataset.from_dict({"text": [_to_text(item, tokenizer) for item in validation]})
+    train_dataset = Dataset.from_dict(
+        {"text": [_to_text(item, tokenizer) for item in train]}
+    )
+    eval_dataset = Dataset.from_dict(
+        {"text": [_to_text(item, tokenizer) for item in validation]}
+    )
     output_dir = (root / spec.training.output_dir).resolve()
     arguments = SFTConfig(
         output_dir=str(output_dir),

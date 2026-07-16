@@ -1,9 +1,12 @@
 # dependencies
 /node_modules
+/package-lock.json
+/pnpm-lock.yaml
 
 # Next.js
 /.next/
 /out/
+/.tauri-publish-*
 
 # production
 /build

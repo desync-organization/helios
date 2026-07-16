@@ -1,11 +1,12 @@
 import json
 from typing import Any
 
+from helios.contracts import ArtifactType
 from helios.models.client import LlamaClient
 from helios.models.manager import ModelManager
 from helios.security.redaction import redact
 
-from .base import ExpertContext, ExpertHandler, deterministic_expert
+from .base import ExpertContext, ExpertHandler, deterministic_expert, deterministic_gate_failures
 
 
 ROLE_MODELS = {
@@ -19,8 +20,21 @@ ROLE_MODELS = {
 def model_expert(manager: ModelManager, expert_name: str, *, role_override: str | None = None,
                  adapter: dict[str, Any] | None = None) -> ExpertHandler:
     async def run(context: ExpertContext) -> dict[str, Any]:
-        # Intent and integration are deterministic hard gates, never model-authored effects.
-        if expert_name in {"intent", "integration"}:
+        # Commands, scans, inventories, integration and terminal effects are
+        # deterministic hard gates. A model never authors execution evidence.
+        deterministic_outputs = {
+            ArtifactType.REPRO_REPORT,
+            ArtifactType.TEST_RESULT,
+            ArtifactType.SECURITY_REPORT,
+            ArtifactType.PACKAGE_RESULT,
+            ArtifactType.BUILD_MANIFEST,
+            ArtifactType.REPOSITORY_INVENTORY,
+            ArtifactType.DEPENDENCY_INVENTORY,
+            ArtifactType.SARIF_REPORT,
+            ArtifactType.REMEDIATION_PLAN,
+            ArtifactType.WRITEBACK_INTENT,
+        }
+        if ArtifactType(context.node.output_artifact) in deterministic_outputs or expert_name == "integration":
             return await deterministic_expert(context)
         role = role_override or ROLE_MODELS.get(expert_name, "triage")
         definition = await manager.acquire(role, context.run_id)
@@ -33,6 +47,10 @@ def model_expert(manager: ModelManager, expert_name: str, *, role_override: str 
             "upstreamArtifacts": [item.model_dump(mode="json", by_alias=True) for item in context.upstream],
             "revisionNotes": context.revision_notes,
         }
+        if "repo:read" in context.node.tool_grants:
+            if not context.execution:
+                raise RuntimeError("model repository access requires a scheduler-bound execution context")
+            payload["repositoryEvidence"] = await context.execution.repository_evidence()
         system = (
             f"You are the Helios {expert_name} expert. Return one JSON object for the requested typed artifact. "
             "Never claim a command, test, scan, advisory, package version, or repository fact not present in evidence. "
@@ -66,7 +84,7 @@ def model_expert(manager: ModelManager, expert_name: str, *, role_override: str 
         }
         # Hard evidence gates override critic confidence.
         if expert_name == "critic":
-            if any(item.content.get("success") is False or item.content.get("safe") is False for item in context.upstream):
+            if deterministic_gate_failures(context):
                 content.update({"verdict": "blocked", "notes": ["deterministic upstream gate failed"], "independent": True})
             reviewed = context.upstream[0] if context.upstream else None
             content.update({
@@ -75,7 +93,30 @@ def model_expert(manager: ModelManager, expert_name: str, *, role_override: str 
                 "reviewedContentHash": reviewed.content_hash if reviewed else "",
                 "producerAgent": reviewed.producer if reviewed else "unknown",
                 "criticAgent": "critic",
+                "reviewedArtifacts": [
+                    {"artifactId": item.artifact_id, "contentHash": item.content_hash,
+                     "producerAgent": item.producer}
+                    for item in context.upstream
+                ],
             })
+            duplicate = next(
+                (item for item in context.upstream if item.artifact_type == ArtifactType.DUP_REPORT),
+                None,
+            )
+            if duplicate and duplicate.content.get("isExactDuplicate") is True:
+                confidence = float(duplicate.content.get("confidence", 0))
+                threshold = float(duplicate.content.get("threshold", 0.92))
+                candidates = duplicate.content.get("candidates", [])
+                duplicate_of = duplicate.content.get("duplicateOf")
+                if not duplicate_of and isinstance(candidates, list) and candidates:
+                    candidate = candidates[0]
+                    duplicate_of = candidate.get("issueNumber") if isinstance(candidate, dict) else None
+                if confidence >= threshold and isinstance(duplicate_of, int) and duplicate_of > 0:
+                    content.update({
+                        "approvedAction": "duplicate_close",
+                        "duplicateOf": duplicate_of,
+                        "duplicateConfidence": confidence,
+                    })
         return content
     return run
 

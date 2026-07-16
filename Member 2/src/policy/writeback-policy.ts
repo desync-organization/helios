@@ -46,6 +46,7 @@ export function evaluateWriteback(context: WritebackPolicyContext): Decision {
   const { intent, task, repository, state, critic, now } = context;
   if (HARD_NEVER.has(intent.action)) return deny("HARD_NEVER", "This action is prohibited by invariant", "autonomy.hard-never");
   if (state.emergencyMode || state.globalPaused) return deny("SYSTEM_PAUSED", "Write-back is disabled by current system state", "autonomy.pause");
+  if (state.pausedAgents.includes(critic.producerAgent)) return deny("AGENT_PAUSED", "The producing agent is paused", "autonomy.pause");
   if (repository.repo !== intent.repo || task.repo !== intent.repo || task.consentScope.repo !== intent.repo) return deny("REPOSITORY_MISMATCH", "Repository identity does not match the task, consent, and onboarding record", "repository.isolation");
   if (repository.health !== "healthy" || !repository.writebackOptIn) return deny("REPOSITORY_DISABLED", "Repository is not healthy and opted in for write-back", "repository.allowlisted");
   if (!repository.allowedActions.includes(intent.action) || !task.consentScope.allowedActions.includes(intent.action)) return deny("ACTION_NOT_ALLOWED", "Action is not allowed by repository policy and task consent", "consent.action");

@@ -4,7 +4,7 @@ from helios.contracts.plan import NodeKind, SpawnRequest
 
 def _node(node_id: str, expert: str, output: ArtifactType, dependencies: list[str] | None = None,
           *, kind: NodeKind = NodeKind.EXPERT, tools: list[str] | None = None,
-          seconds: float = 30, sensitive: bool = False,
+          seconds: float = 20, sensitive: bool = False,
           spawn: SpawnRequest | None = None) -> PlanNode:
     return PlanNode(
         node_id=node_id,
@@ -14,7 +14,7 @@ def _node(node_id: str, expert: str, output: ArtifactType, dependencies: list[st
         acceptance_criteria=[f"produce a valid {output.value} artifact", "cite policy and upstream evidence"],
         tool_grants=tools or [],
         policy_ids=["runtime.typed-handoffs", "runtime.credential-free"],
-        budget=Budget(max_tokens=3000, max_seconds=seconds),
+        budget=Budget(max_tokens=1000, max_seconds=seconds),
         kind=kind,
         sensitive=sensitive,
         spawn=spawn,
@@ -29,7 +29,7 @@ def maintain_plan(task: NormalizedTask) -> Plan:
             _node("patch", "backend", ArtifactType.PATCH, ["repro"], tools=["repo:read", "workspace:write"], seconds=180, sensitive=True),
             _node("tests", "test", ArtifactType.TEST_RESULT, ["patch"], tools=["command:test"], seconds=180),
             _node("security", "security", ArtifactType.SECURITY_REPORT, ["patch"], tools=["scanner:local"], seconds=120, sensitive=True),
-            _node("critic", "critic", ArtifactType.CRITIC_VERDICT, ["tests", "security"], kind=NodeKind.CRITIC),
+            _node("critic", "critic", ArtifactType.CRITIC_VERDICT, ["patch", "tests", "security"], kind=NodeKind.CRITIC),
             _node("intent", "intent", ArtifactType.WRITEBACK_INTENT, ["critic"], kind=NodeKind.INTENT),
         ]
     elif task.task_type == TaskType.RELEASE:
@@ -49,7 +49,8 @@ def maintain_plan(task: NormalizedTask) -> Plan:
         nodes = [
             _node("docs", "docs", ArtifactType.PATCH, tools=["repo:read", "workspace:write"]),
             _node("tests", "test", ArtifactType.TEST_RESULT, ["docs"], tools=["command:test"]),
-            _node("critic", "critic", ArtifactType.CRITIC_VERDICT, ["tests"], kind=NodeKind.CRITIC),
+            _node("security", "security", ArtifactType.SECURITY_REPORT, ["docs"], tools=["scanner:local"], sensitive=True),
+            _node("critic", "critic", ArtifactType.CRITIC_VERDICT, ["docs", "tests", "security"], kind=NodeKind.CRITIC),
             _node("intent", "intent", ArtifactType.WRITEBACK_INTENT, ["critic"], kind=NodeKind.INTENT),
         ]
     elif task.task_type == TaskType.ESCALATE:
@@ -63,7 +64,8 @@ def maintain_plan(task: NormalizedTask) -> Plan:
             _node("classify", "triage", ArtifactType.CLASSIFICATION),
             _node("dedupe", "dedupe", ArtifactType.DUP_REPORT),
             _node("reply", "docs", ArtifactType.DRAFT_REPLY, ["classify", "dedupe"]),
-            _node("critic", "critic", ArtifactType.CRITIC_VERDICT, ["reply"], kind=NodeKind.CRITIC),
+            _node("critic", "critic", ArtifactType.CRITIC_VERDICT,
+                  ["classify", "dedupe", "reply"], kind=NodeKind.CRITIC),
             _node("intent", "intent", ArtifactType.WRITEBACK_INTENT, ["critic"], kind=NodeKind.INTENT),
         ]
     return Plan(task_id=task.task_id, policy_version=task.policy_version, nodes=nodes, terminal_node_id="intent", fallback=True)
@@ -122,7 +124,7 @@ def security_plan(task: NormalizedTask) -> Plan:
             _node("patch", "backend", ArtifactType.PATCH, ["remediation"], tools=["repo:read", "workspace:write"], sensitive=True),
             _node("tests", "test", ArtifactType.TEST_RESULT, ["patch"], tools=["command:test"]),
             _node("rescan", "security", ArtifactType.SARIF_REPORT, ["patch"], tools=["scanner:local"], sensitive=True),
-            _node("critic", "critic", ArtifactType.CRITIC_VERDICT, ["tests", "rescan"], kind=NodeKind.CRITIC),
+            _node("critic", "critic", ArtifactType.CRITIC_VERDICT, ["patch", "tests", "rescan"], kind=NodeKind.CRITIC),
         ])
     else:
         nodes.append(_node("critic", "critic", ArtifactType.CRITIC_VERDICT, ["analysis"], kind=NodeKind.CRITIC))

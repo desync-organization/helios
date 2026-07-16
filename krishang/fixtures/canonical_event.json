@@ -8,7 +8,7 @@
   "taskId": "task_fixture_1",
   "runId": "run_fixture_1",
   "spanId": null,
+  "label": "fixture",
   "payload": {"status": "completed", "resultUrls": []},
   "redactionLevel": "internal"
 }
-

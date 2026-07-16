@@ -1,8 +1,11 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from helios.contracts import Artifact, ArtifactType, NormalizedTask, PlanNode
+
+if TYPE_CHECKING:
+    from helios.execution import NodeExecutionContext
 
 
 @dataclass(slots=True)
@@ -12,6 +15,7 @@ class ExpertContext:
     node: PlanNode
     upstream: list[Artifact]
     revision_notes: list[str]
+    execution: "NodeExecutionContext | None" = None
 
 
 ExpertHandler = Callable[[ExpertContext], Awaitable[dict[str, Any]]]
@@ -21,12 +25,35 @@ def _upstream_summary(context: ExpertContext) -> list[dict[str, str]]:
     return [{"artifactId": item.artifact_id, "type": item.artifact_type.value, "hash": item.content_hash} for item in context.upstream]
 
 
+def deterministic_gate_failures(context: ExpertContext) -> list[Artifact]:
+    failures: list[Artifact] = []
+    read_only_audit = context.task.mode.value == "security_audit" and context.task.task_type.value == "audit"
+    for artifact in context.upstream:
+        if artifact.artifact_type == ArtifactType.TEST_RESULT and artifact.content.get("success") is not True:
+            failures.append(artifact)
+        elif artifact.artifact_type == ArtifactType.SECURITY_REPORT:
+            if artifact.content.get("coverageComplete") is not True:
+                failures.append(artifact)
+            elif not read_only_audit and artifact.content.get("safe") is not True:
+                failures.append(artifact)
+        elif artifact.artifact_type == ArtifactType.SARIF_REPORT and context.task.task_type.value == "remediate":
+            if artifact.content.get("coverageComplete") is not True or artifact.content.get("findings"):
+                failures.append(artifact)
+        elif artifact.artifact_type == ArtifactType.PACKAGE_RESULT and artifact.content.get("integrated") is not True:
+            failures.append(artifact)
+    return failures
+
+
 async def deterministic_expert(context: ExpertContext) -> dict[str, Any]:
     output = ArtifactType(context.node.output_artifact)
     task = context.task
     evidence = _upstream_summary(context)
     base = {"taskId": task.task_id, "repository": task.repository, "baseSha": task.base_sha,
             "evidence": evidence, "policyIds": context.node.policy_ids}
+    if "repo:read" in context.node.tool_grants:
+        if not context.execution:
+            raise RuntimeError("repository access requires a scheduler-bound execution context")
+        base["repositoryEvidence"] = await context.execution.repository_evidence()
     if context.node.expert == "html-slm":
         return {**base, "language": "html", "files": [{"path": "index.html", "content": task.metadata.get(
             "htmlFixture", "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Helios</title></head><body><main id=\"app\"></main></body></html>"
@@ -46,26 +73,35 @@ async def deterministic_expert(context: ExpertContext) -> dict[str, Any]:
     if output == ArtifactType.DUP_REPORT:
         return {**base, "candidates": [], "isExactDuplicate": False, "threshold": 0.92}
     if output == ArtifactType.DRAFT_REPLY:
-        return {**base, "body": f"Thanks for reporting this. Hermes reviewed `{task.title}` and recorded the evidence for maintainer follow-up.",
+        return {**base, "body": f"Thanks for reporting this. Helios reviewed `{task.title}` and recorded the evidence for maintainer follow-up.",
                 "sourceLinks": task.metadata.get("sourceLinks", [])}
     if output == ArtifactType.REPRO_REPORT:
-        return {**base, "isolated": True, "reproduced": True,
-                "command": task.metadata.get("reproCommand", "repository-declared test command"),
-                "before": "failed", "smallestFailingCase": task.title}
+        if not context.execution:
+            raise RuntimeError("reproduction requires a scheduler-bound execution context")
+        result = await context.execution.test_evidence()
+        return {**base, "isolated": True,
+                "reproduced": result["executed"] and not result["success"],
+                "commands": result["commands"], "results": result["results"],
+                "authoritative": True, "fabricated": False,
+                "smallestFailingCase": task.title}
     if output == ArtifactType.PATCH:
-        owner = task.metadata.get("proposedOwner")
-        files = task.metadata.get("proposedFiles", []) if not owner or owner == context.node.expert else []
+        configured = task.policy_pack.get("deterministicFilesByAgent", {})
+        files = configured.get(context.node.expert, []) if isinstance(configured, dict) else []
+        allowed_noops = task.policy_pack.get("allowNoopAgents", [])
+        no_changes = not files and isinstance(allowed_noops, list) and context.node.expert in allowed_noops
         return {**base, "format": "structured-patch", "baseSha": task.base_sha,
-                "files": files, "completeFiles": True,
-                "protectedPathsTouched": False}
+                "files": files, "completeFiles": bool(files) or no_changes,
+                "noChangesRequired": no_changes,
+                "protectedPathsTouched": False, "fabricated": False}
     if output == ArtifactType.TEST_RESULT:
-        results = task.metadata.get("testResults", [])
-        success = (bool(results) and all(item.get("success") is True for item in results)) or task.source != "github"
-        return {**base, "success": success, "before": "not_run", "after": "passed" if success else "failed",
-                "commands": task.metadata.get("testCommands", []), "results": results, "fabricated": not bool(results)}
+        if not context.execution:
+            raise RuntimeError("tests require a scheduler-bound execution context")
+        result = await context.execution.test_evidence()
+        return {**base, **result, "before": "unknown", "after": result["status"]}
     if output == ArtifactType.SECURITY_REPORT:
-        return {**base, "findings": [], "secretsRedacted": True, "safe": True,
-                "limitations": task.metadata.get("securityLimitations", [])}
+        if not context.execution:
+            raise RuntimeError("security review requires a scheduler-bound execution context")
+        return {**base, **await context.execution.security_evidence(context.upstream)}
     if output == ArtifactType.REVIEW_NOTES:
         return {**base, "summary": "Evidence-backed review completed", "findings": [],
                 "mergeEligible": False, "reason": "merge eligibility is evaluated by the control plane"}
@@ -108,33 +144,63 @@ async def deterministic_expert(context: ExpertContext) -> dict[str, Any]:
     if output == ArtifactType.BUILD_MANIFEST:
         integrated_files = [file for item in context.upstream if item.artifact_type == ArtifactType.PACKAGE_RESULT
                             for file in item.content.get("files", [])]
-        return {**base, "files": integrated_files or task.metadata.get("proposedFiles", []),
-                "commands": task.metadata.get("testCommands", []),
+        workspace = await context.execution.workspace_evidence() if context.execution else {}
+        return {**base, "files": integrated_files,
+                "commands": [command for item in context.upstream if item.artifact_type == ArtifactType.TEST_RESULT
+                             for command in item.content.get("commands", [])],
                 "testResults": [item.content for item in context.upstream if item.artifact_type == ArtifactType.TEST_RESULT],
                 "securityResults": [item.content for item in context.upstream if item.artifact_type == ArtifactType.SECURITY_REPORT],
-                "knownLimitations": [], "resultHashes": {item.artifact_id: item.content_hash for item in context.upstream}}
+                "knownLimitations": [], "workspaceEvidence": workspace,
+                "resultHashes": {item.artifact_id: item.content_hash for item in context.upstream}}
     if output == ArtifactType.REPOSITORY_INVENTORY:
-        return {**base, "languages": task.metadata.get("languages", []), "manifests": task.metadata.get("manifests", []),
-                "lockfiles": task.metadata.get("lockfiles", []), "coverageLimitations": task.metadata.get("coverageLimitations", [])}
+        if not context.execution:
+            raise RuntimeError("inventory requires a scheduler-bound execution context")
+        return {**base, **await context.execution.inventory_evidence()}
     if output == ArtifactType.DEPENDENCY_INVENTORY:
-        return {**base, "dependencies": task.metadata.get("dependencies", []), "lockfileAuthoritative": bool(task.metadata.get("lockfiles"))}
+        if not context.execution:
+            raise RuntimeError("dependency inventory requires a scheduler-bound execution context")
+        return {**base, **await context.execution.dependency_evidence()}
     if output == ArtifactType.SARIF_REPORT:
-        return {**base, "version": "2.1.0", "runs": [], "findings": task.metadata.get("findings", []), "secretsRedacted": True}
+        if not context.execution:
+            raise RuntimeError("scanner execution requires a scheduler-bound execution context")
+        return {**base, **await context.execution.scanner_evidence()}
     if output == ArtifactType.REMEDIATION_PLAN:
-        return {**base, "authorized": task.consent.remediation_permitted,
-                "actions": task.metadata.get("remediationActions", []),
-                "tests": ["targeted regression", "full impacted suite", "scanner rescan"],
-                "publication": "human-controlled"}
+        if not context.execution:
+            raise RuntimeError("remediation planning requires a scheduler-bound execution context")
+        return {**base, **await context.execution.remediation_evidence(context.upstream)}
     if output == ArtifactType.CRITIC_VERDICT:
-        failed = [item for item in context.upstream if item.content.get("success") is False or item.content.get("safe") is False]
+        failed = deterministic_gate_failures(context)
         unanswered = [decision for item in context.upstream for decision in item.content.get("unansweredDecisions", [])]
         reviewed = context.upstream[0] if context.upstream else None
+        reviewed_artifacts = [
+            {"artifactId": item.artifact_id, "contentHash": item.content_hash, "producerAgent": item.producer}
+            for item in context.upstream
+        ]
         review_identity = {
             "reviewedArtifactId": reviewed.artifact_id if reviewed else "",
             "reviewedContentHash": reviewed.content_hash if reviewed else "",
             "producerAgent": reviewed.producer if reviewed else "unknown",
             "criticAgent": "critic",
+            "reviewedArtifacts": reviewed_artifacts,
         }
+        duplicate = next(
+            (item for item in context.upstream if item.artifact_type == ArtifactType.DUP_REPORT),
+            None,
+        )
+        if duplicate and duplicate.content.get("isExactDuplicate") is True:
+            confidence = float(duplicate.content.get("confidence", 0))
+            threshold = float(duplicate.content.get("threshold", 0.92))
+            candidates = duplicate.content.get("candidates", [])
+            duplicate_of = duplicate.content.get("duplicateOf")
+            if not duplicate_of and isinstance(candidates, list) and candidates:
+                candidate = candidates[0]
+                duplicate_of = candidate.get("issueNumber") if isinstance(candidate, dict) else None
+            if confidence >= threshold and isinstance(duplicate_of, int) and duplicate_of > 0:
+                review_identity.update({
+                    "approvedAction": "duplicate_close",
+                    "duplicateOf": duplicate_of,
+                    "duplicateConfidence": confidence,
+                })
         if failed:
             return {**base, **review_identity, "verdict": "revise", "notes": ["deterministic gate failed"], "independent": True}
         if unanswered:
@@ -149,14 +215,22 @@ async def deterministic_expert(context: ExpertContext) -> dict[str, Any]:
             action = "private_security_pr"
         if task.task_type.value in {"classify", "label", "intake", "dedupe", "respond", "clarify"}:
             action = "issue_update"
+        if task.task_type.value == "dedupe" and critic.content.get("approvedAction") == "duplicate_close":
+            action = "duplicate_close"
+        if task.task_type.value == "label":
+            action = "labels_set"
         if task.task_type.value == "review":
             action = "review_comment"
         if task.task_type.value == "escalate":
             action = "escalate"
         if task.task_type.value == "release":
             action = "draft_release"
-        return {**base, "authorized": True, "action": action, "credentialFree": True,
+        authorized = action != "escalate"
+        return {**base, "authorized": authorized, "action": action, "credentialFree": True,
                 "publishRelease": False, "deploy": False, "idempotencyKey": f"{task.task_id}:{action}",
+                "reviewedArtifacts": critic.content.get("reviewedArtifacts", []),
                 "issueNumber": task.metadata.get("issueNumber"),
-                "pullNumber": task.metadata.get("pullNumber")}
+                "pullNumber": task.metadata.get("pullNumber"),
+                "duplicateOf": critic.content.get("duplicateOf"),
+                "confidence": critic.content.get("duplicateConfidence")}
     return {**base, "status": "complete"}
