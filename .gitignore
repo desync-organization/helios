@@ -7,6 +7,8 @@
 /.next/
 /out/
 /.tauri-publish-*
+/.playwright-cli/
+/output/
 
 # production
 /build

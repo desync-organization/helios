@@ -66,6 +66,15 @@ class StaticSiteResult(BaseModel):
         return self
 
 
+class SiteGenerationReadiness(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    ready: bool
+    model: str = Field(min_length=1, max_length=128)
+    provider: Literal["ollama", "injected"]
+    error: str | None = Field(default=None, max_length=256)
+
+
 class PaletteSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -107,6 +116,9 @@ class SiteSpec(BaseModel):
     cta_message: str = Field(min_length=1, max_length=160)
 
 
+_SITE_SPEC_JSON_SCHEMA = SiteSpec.model_json_schema()
+
+
 class SiteModelClient(Protocol):
     model: str
 
@@ -117,6 +129,8 @@ class SiteGenerator(Protocol):
     model: str
 
     async def generate(self, request: SitePromptRequest) -> StaticSiteResult: ...
+
+    async def readiness(self) -> SiteGenerationReadiness: ...
 
 
 class OllamaClient:
@@ -129,6 +143,7 @@ class OllamaClient:
         model: str = DEFAULT_OLLAMA_MODEL,
         timeout: float = DEFAULT_OLLAMA_TIMEOUT_S,
         transport: httpx.AsyncBaseTransport | None = None,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
         endpoint = endpoint.rstrip("/")
         parsed = urlsplit(endpoint)
@@ -140,10 +155,13 @@ class OllamaClient:
             raise ValueError("Ollama model name is invalid")
         if not 1 <= timeout <= 600:
             raise ValueError("Ollama timeout must be between 1 and 600 seconds")
+        if transport is not None and client is not None:
+            raise ValueError("provide either an HTTP transport or client, not both")
         self.endpoint = endpoint
         self.model = model
         self.timeout = timeout
-        self.transport = transport
+        self._owns_client = client is None
+        self._client = client or httpx.AsyncClient(timeout=timeout, transport=transport)
 
     @classmethod
     def from_environment(cls) -> "OllamaClient":
@@ -167,10 +185,13 @@ class OllamaClient:
             "options": {"temperature": 0, "num_predict": 640},
         }
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
-                response = await client.post(f"{self.endpoint}/api/generate", json=request)
-                response.raise_for_status()
-                payload = response.json()
+            response = await self._client.post(
+                f"{self.endpoint}/api/generate",
+                json=request,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
         except httpx.TimeoutException as exc:
             raise SiteGenerationError(
                 f"Local Ollama timed out after {self.timeout:g} seconds"
@@ -200,6 +221,44 @@ class OllamaClient:
             raise SiteGenerationError("Local Ollama returned a non-object specification")
         return structured
 
+    async def readiness(self) -> SiteGenerationReadiness:
+        try:
+            response = await self._client.get(
+                f"{self.endpoint}/api/tags",
+                timeout=min(self.timeout, 3.0),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            models = payload.get("models") if isinstance(payload, dict) else None
+            available = {
+                str(item.get("name") or item.get("model"))
+                for item in models or []
+                if isinstance(item, dict) and (item.get("name") or item.get("model"))
+            }
+            if self.model not in available:
+                return SiteGenerationReadiness(
+                    ready=False,
+                    model=self.model,
+                    provider="ollama",
+                    error="configured model is not installed",
+                )
+            return SiteGenerationReadiness(
+                ready=True,
+                model=self.model,
+                provider="ollama",
+            )
+        except (httpx.HTTPError, ValueError, TypeError):
+            return SiteGenerationReadiness(
+                ready=False,
+                model=self.model,
+                provider="ollama",
+                error="local Ollama is unavailable",
+            )
+
+    async def aclose(self) -> None:
+        if self._owns_client and not self._client.is_closed:
+            await self._client.aclose()
+
 
 class StaticSiteGenerator:
     def __init__(self, client: SiteModelClient) -> None:
@@ -210,14 +269,14 @@ class StaticSiteGenerator:
         prompt = _site_spec_prompt(request.prompt)
         raw_spec = await self.client.generate(
             prompt=prompt,
-            json_schema=SiteSpec.model_json_schema(),
+            json_schema=_SITE_SPEC_JSON_SCHEMA,
         )
         try:
             spec = SiteSpec.model_validate(raw_spec)
         except ValidationError as first_error:
             repaired = await self.client.generate(
                 prompt=_site_spec_repair_prompt(request.prompt, raw_spec, first_error),
-                json_schema=SiteSpec.model_json_schema(),
+                json_schema=_SITE_SPEC_JSON_SCHEMA,
             )
             try:
                 spec = SiteSpec.model_validate(repaired)
@@ -231,6 +290,21 @@ class StaticSiteGenerator:
             prompt_hash=hashlib.sha256(request.prompt.encode("utf-8")).hexdigest(),
             files=files,
         )
+
+    async def readiness(self) -> SiteGenerationReadiness:
+        readiness = getattr(self.client, "readiness", None)
+        if readiness is None:
+            return SiteGenerationReadiness(
+                ready=True,
+                model=self.model,
+                provider="injected",
+            )
+        return await readiness()
+
+    async def aclose(self) -> None:
+        close = getattr(self.client, "aclose", None)
+        if close is not None:
+            await close()
 
 
 def _site_spec_prompt(user_prompt: str) -> str:

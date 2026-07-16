@@ -1,6 +1,8 @@
+import hashlib
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,7 @@ def _repository(
     *,
     passing_tests: bool = False,
     test_side_effect: bool = False,
+    gitignore: str | None = None,
 ) -> tuple[Path, str]:
     source = root / "source"
     source.mkdir()
@@ -21,6 +24,8 @@ def _repository(
     (source / "src").mkdir()
     (source / "src" / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
     (source / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    if gitignore is not None:
+        (source / ".gitignore").write_text(gitignore, encoding="utf-8")
     if passing_tests:
         (source / "tests").mkdir()
         side_effect = (
@@ -99,6 +104,74 @@ async def test_repository_reads_and_patch_materialization_are_isolated_and_scope
     protected = {"files": [{"path": ".github/workflows/release.yml", "content": "name: unsafe\n"}]}
     with pytest.raises(ExecutionPolicyError, match="protected path"):
         context.validate_output_scope(protected)
+
+
+async def test_repository_evidence_uses_git_tracked_and_untracked_source_files(
+    tmp_path,
+    monkeypatch,
+):
+    source, sha = _repository(tmp_path, gitignore="ignored/\n")
+    services = ExecutionServices(_task(sha), tmp_path / "workspace", source_repository=source)
+    await services.materialize_repository()
+    untracked = services.checkout / "untracked.txt"
+    untracked.write_text("visible\n", encoding="utf-8")
+    ignored = services.checkout / "ignored"
+    ignored.mkdir()
+    (ignored / "bulk.js").write_text("ignored\n", encoding="utf-8")
+
+    def reject_fallback(_path: Path, _pattern: str):
+        raise AssertionError("Git checkout unexpectedly used the filesystem fallback")
+
+    monkeypatch.setattr(Path, "rglob", reject_fallback)
+    evidence = await services.repository_evidence()
+
+    files = {item["path"]: item for item in evidence["files"]}
+    assert set(files) == {".gitignore", "README.md", "src/app.py", "untracked.txt"}
+    assert "ignored/bulk.js" not in files
+    assert files["untracked.txt"] == {
+        "path": "untracked.txt",
+        "bytes": len(untracked.read_bytes()),
+        "sha256": hashlib.sha256(untracked.read_bytes()).hexdigest(),
+    }
+    assert next(item for item in evidence["excerpts"] if item["path"] == "README.md")[
+        "content"
+    ] == "# Fixture\n"
+
+
+async def test_repository_evidence_non_git_fallback_runs_off_event_loop(
+    tmp_path,
+    monkeypatch,
+):
+    services = ExecutionServices(
+        _task("0" * 40, excluded_paths=["ignored/**"]),
+        tmp_path / "workspace",
+    )
+    services.checkout.mkdir(parents=True)
+    plain = services.checkout / "plain.txt"
+    plain.write_text("fallback\n", encoding="utf-8")
+    ignored = services.checkout / "ignored"
+    ignored.mkdir()
+    (ignored / "hidden.txt").write_text("hidden\n", encoding="utf-8")
+    caller_thread = threading.get_ident()
+    evidence_threads: list[int] = []
+    collect = services._collect_repository_evidence
+
+    async def materialized():
+        return services._materialization_evidence("0" * 40, "fixture")
+
+    def tracked_collect():
+        evidence_threads.append(threading.get_ident())
+        return collect()
+
+    monkeypatch.setattr(services, "materialize_repository", materialized)
+    monkeypatch.setattr(services, "_collect_repository_evidence", tracked_collect)
+
+    evidence = await services.repository_evidence()
+
+    assert evidence_threads and evidence_threads[0] != caller_thread
+    assert [item["path"] for item in evidence["files"]] == ["plain.txt"]
+    assert evidence["files"][0]["sha256"] == hashlib.sha256(plain.read_bytes()).hexdigest()
+    assert evidence["excerpts"] == [{"path": "plain.txt", "content": "fallback\n"}]
 
 
 async def test_test_evidence_comes_from_a_real_sanitized_process(tmp_path):

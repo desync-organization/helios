@@ -235,71 +235,84 @@ function upsertArtifactState(
 /* ------------------------------------------------------------------ */
 
 let _ws: WebSocket | null = null;
-let _heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-let _statusPollTimer: ReturnType<typeof setInterval> | null = null;
 let _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let _registeredId: string | null = null;
+let _shouldReconnect = false;
+const MAX_PENDING_PROMPTS = 20;
+const _pendingPrompts: string[] = [];
 
-/** Fetch /status via HTTP to get the wrapper list (fallback & periodic sync). */
-async function pollWrapperStatus(httpUrl: string) {
-  try {
-    const res = await fetch(httpUrl);
-    if (!res.ok) return;
-    const data = (await res.json()) as { wrappers: WrapperInfo[] };
-    const map: Record<string, WrapperInfo> = {};
-    for (const w of data.wrappers) {
-      // Hide our own UI observer from the wrapper list
-      if (w.id === _registeredId) continue;
-      map[w.id] = w;
-    }
-    useOrchestratorStore.setState({ wrappers: map });
-  } catch {
-    /* orchestrator might be down – ignore */
+function clearReconnectTimer() {
+  if (_reconnectTimer) {
+    clearTimeout(_reconnectTimer);
+    _reconnectTimer = null;
   }
 }
 
-/** Recompute the cost summary from the full token usage log. */
-function _recomputeCostSummary(log: TokenUsageEntry[]): CostSummary {
-  let totalIn = 0;
-  let totalOut = 0;
-  let totalCost = 0;
-  const perOfficeMap: Record<string, PerOfficeStat> = {};
+function sendPrompt(websocket: WebSocket, text: string): boolean {
+  if (websocket.readyState !== WebSocket.OPEN) return false;
+  try {
+    websocket.send(JSON.stringify({ type: "prompt", data: text }));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  for (const entry of log) {
-    totalIn += entry.input_tokens;
-    totalOut += entry.output_tokens;
-    totalCost += entry.cost_usd;
+function flushPendingPrompts(websocket: WebSocket) {
+  while (_ws === websocket && _pendingPrompts.length > 0) {
+    const prompt = _pendingPrompts[0];
+    if (!sendPrompt(websocket, prompt)) return;
+    _pendingPrompts.shift();
+  }
+}
 
-    // Derive short office name for grouping
-    const officeKey = entry.office
-      .replace(/[(\[].*[)\]]/g, "")
-      .replace(/-retry/g, "")
-      .trim()
-      .split(" ")[0] || entry.office;
+function officeKey(office: string): string {
+  return office
+    .replace(/[(\[].*[)\]]/g, "")
+    .replace(/-retry/g, "")
+    .trim()
+    .split(" ")[0] || office;
+}
 
-    if (!perOfficeMap[officeKey]) {
-      perOfficeMap[officeKey] = {
-        office: officeKey,
+/** Add one usage record without rescanning the complete call history. */
+export function appendCostSummary(
+  summary: CostSummary,
+  entry: TokenUsageEntry,
+): CostSummary {
+  const key = officeKey(entry.office);
+  const existingIndex = summary.perOffice.findIndex((item) => item.office === key);
+  const perOffice = [...summary.perOffice];
+  const existing = existingIndex >= 0
+    ? perOffice[existingIndex]
+    : {
+        office: key,
         calls: 0,
         inputTokens: 0,
         outputTokens: 0,
         costUsd: 0,
         totalLatency: 0,
       };
-    }
-    perOfficeMap[officeKey].calls += 1;
-    perOfficeMap[officeKey].inputTokens += entry.input_tokens;
-    perOfficeMap[officeKey].outputTokens += entry.output_tokens;
-    perOfficeMap[officeKey].costUsd += entry.cost_usd;
-    perOfficeMap[officeKey].totalLatency += entry.latency_s;
+  const updated: PerOfficeStat = {
+    ...existing,
+    calls: existing.calls + 1,
+    inputTokens: existing.inputTokens + entry.input_tokens,
+    outputTokens: existing.outputTokens + entry.output_tokens,
+    costUsd: existing.costUsd + entry.cost_usd,
+    totalLatency: existing.totalLatency + entry.latency_s,
+  };
+
+  if (existingIndex >= 0) {
+    perOffice[existingIndex] = updated;
+  } else {
+    perOffice.push(updated);
   }
+  perOffice.sort((a, b) => b.costUsd - a.costUsd);
 
   return {
-    totalInputTokens: totalIn,
-    totalOutputTokens: totalOut,
-    totalCostUsd: Math.round(totalCost * 1e6) / 1e6,
-    totalCalls: log.length,
-    perOffice: Object.values(perOfficeMap).sort((a, b) => b.costUsd - a.costUsd),
+    totalInputTokens: summary.totalInputTokens + entry.input_tokens,
+    totalOutputTokens: summary.totalOutputTokens + entry.output_tokens,
+    totalCostUsd: Math.round((summary.totalCostUsd + entry.cost_usd) * 1e6) / 1e6,
+    totalCalls: summary.totalCalls + 1,
+    perOffice,
   };
 }
 
@@ -396,9 +409,14 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       ],
     }));
 
-    // Send the prompt directly to the Helios site generator.
-    if (_ws && _ws.readyState === WebSocket.OPEN) {
-      _ws.send(JSON.stringify({ type: "prompt", data: text }));
+    // Send immediately when possible; otherwise retain the prompt until the
+    // current connection reaches OPEN. A successfully sent prompt is removed
+    // from the queue before any later reconnect can flush it again.
+    if (!_ws || !sendPrompt(_ws, text)) {
+      if (_pendingPrompts.length >= MAX_PENDING_PROMPTS) {
+        _pendingPrompts.shift();
+      }
+      _pendingPrompts.push(text);
     }
   },
 
@@ -410,16 +428,22 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       return;
     }
 
+    _shouldReconnect = true;
+    clearReconnectTimer();
+
     try {
       const ws = new WebSocket(url);
       _ws = ws;
 
       ws.addEventListener("open", () => {
+        if (_ws !== ws) return;
         console.log("[ml-service] connected to", url);
         set({ connected: true });
+        flushPendingPrompts(ws);
       });
 
       ws.addEventListener("message", (event) => {
+        if (_ws !== ws) return;
         let msg: DirectMessage;
         try {
           const parsed = JSON.parse(String(event.data)) as unknown;
@@ -512,22 +536,30 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
         }
 
         // Handle per-call token usage (streamed from backend)
-        if (msg.type === "token_usage") {
-          const entry = msg.data as unknown as TokenUsageEntry;
-          if (entry && typeof entry.input_tokens === 'number') {
+        if (msg.type === "token_usage" && isRecord(msg.data)) {
+          const inputTokens = msg.data.input_tokens;
+          const outputTokens = msg.data.output_tokens;
+          const costUsd = msg.data.cost_usd;
+          const latencySeconds = msg.data.latency_s;
+          if (
+            typeof inputTokens === "number" && Number.isFinite(inputTokens)
+            && typeof outputTokens === "number" && Number.isFinite(outputTokens)
+            && typeof costUsd === "number" && Number.isFinite(costUsd)
+            && typeof latencySeconds === "number" && Number.isFinite(latencySeconds)
+          ) {
             const newEntry: TokenUsageEntry = {
-              office: entry.office ?? "unknown",
-              input_tokens: entry.input_tokens,
-              output_tokens: entry.output_tokens,
-              cost_usd: entry.cost_usd,
-              latency_s: entry.latency_s,
+              office: nonEmptyString(msg.data.office) ?? "unknown",
+              input_tokens: inputTokens,
+              output_tokens: outputTokens,
+              cost_usd: costUsd,
+              latency_s: latencySeconds,
               timestamp: Date.now(),
             };
             set((state) => {
               const newLog = [...state.tokenUsageLog, newEntry];
               return {
                 tokenUsageLog: newLog,
-                costSummary: _recomputeCostSummary(newLog),
+                costSummary: appendCostSummary(state.costSummary, newEntry),
               };
             });
           }
@@ -585,19 +617,26 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       });
 
       ws.addEventListener("close", () => {
+        if (_ws !== ws) return;
         console.log("[ml-service] disconnected");
-        cleanup();
+        cleanup(ws);
         set({ connected: false });
 
-        // Attempt to reconnect after 3 seconds
-        if (_reconnectTimer) clearTimeout(_reconnectTimer);
+        if (!_shouldReconnect) return;
+
+        // Attempt to reconnect after 3 seconds. Explicit disconnects clear the
+        // intent flag, and stale sockets cannot schedule a competing client.
+        clearReconnectTimer();
         _reconnectTimer = setTimeout(() => {
+          _reconnectTimer = null;
+          if (!_shouldReconnect || _ws) return;
           console.log("[ml-service] attempting reconnect…");
           get().connect(url);
         }, 3000);
       });
 
       ws.addEventListener("error", (err) => {
+        if (_ws !== ws) return;
         console.error("[ml-service] WebSocket error", err);
       });
     } catch (err) {
@@ -608,24 +647,12 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   /* ---- disconnect ---- */
 
   disconnect() {
-    if (_reconnectTimer) {
-      clearTimeout(_reconnectTimer);
-      _reconnectTimer = null;
-    }
-    if (_ws) {
-      // Send graceful shutdown
-      try {
-        _ws.send(
-          JSON.stringify({
-            type: "SHUTDOWN",
-            src: _registeredId ?? "ui-observer",
-            ts: Date.now(),
-          }),
-        );
-      } catch { /* ignore */ }
-      _ws.close();
-    }
-    cleanup();
+    _shouldReconnect = false;
+    clearReconnectTimer();
+    _pendingPrompts.length = 0;
+    const websocket = _ws;
+    cleanup(websocket);
+    websocket?.close();
     set({ connected: false, wrappers: {} });
   },
 }));
@@ -634,196 +661,9 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
 /*  Cleanup helper                                                     */
 /* ------------------------------------------------------------------ */
 
-function cleanup() {
-  if (_heartbeatTimer) {
-    clearInterval(_heartbeatTimer);
-    _heartbeatTimer = null;
-  }
-  if (_statusPollTimer) {
-    clearInterval(_statusPollTimer);
-    _statusPollTimer = null;
-  }
-  _ws = null;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Envelope handler – routes incoming messages to state updates       */
-/* ------------------------------------------------------------------ */
-
-function handleEnvelope(
-  env: Envelope,
-  set: (partial: Partial<OrchestratorState> | ((s: OrchestratorState) => Partial<OrchestratorState>)) => void,
-  get: () => OrchestratorState,
-) {
-  const payload = (env.payload ?? {}) as Record<string, unknown>;
-
-  switch (env.type) {
-    /* ---- Registration acknowledgement ---- */
-    case "REGISTER_ACK": {
-      _registeredId = (payload.id as string) ?? env.id ?? "ui-observer";
-      console.log("[orchestrator] registered as", _registeredId);
-      break;
-    }
-
-    /* ---- Heartbeat ack — silently consumed ---- */
-    case "HEARTBEAT_ACK":
-      break;
-
-    /* ---- EVENT envelope — the main message bus ---- */
-    case "EVENT": {
-      const kind = payload.kind as string | undefined;
-
-      switch (kind) {
-        /* PM responding to a user chat message */
-        case "CHAT_RESPONSE": {
-          set((state) => ({
-            chatMessages: [
-              ...state.chatMessages,
-              {
-                id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                author: payload.author as string ?? "Helios PM",
-                avatar: "PM",
-                content: (payload.text as string) ?? (payload.message as string) ?? "",
-                timestamp: new Date(),
-                isUser: false,
-              },
-            ],
-          }));
-          break;
-        }
-
-        /* Agent-to-agent or agent-to-UI summary messages */
-        case "AGENT_MESSAGE": {
-          set((state) => ({
-            agentMessages: [
-              ...state.agentMessages,
-              {
-                id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                author: (payload.author as string) ?? env.src ?? "Agent",
-                avatar: ((payload.author as string) ?? env.src ?? "AG").slice(0, 2).toUpperCase(),
-                content: (payload.text as string) ?? (payload.message as string) ?? "",
-                timestamp: new Date(),
-                isUser: false,
-              },
-            ],
-          }));
-          break;
-        }
-
-        /* A specialist generated a code artifact */
-        case "CODE_ARTIFACT": {
-          set((state) => upsertArtifactState(state, payload, env.src ?? "unknown"));
-          break;
-        }
-
-        /* PM signals that the full project is ready (GitHub repo created) */
-        case "PROJECT_READY": {
-          set({
-            projectGithubUrl: (payload.githubUrl as string) ?? (payload.url as string) ?? null,
-            projectName: (payload.projectName as string) ?? null,
-            projectRepoName: (payload.repoName as string) ?? null,
-          });
-          // Add a chat message informing the user
-          set((state) => ({
-            chatMessages: [
-              ...state.chatMessages,
-              {
-                id: `msg-project-${Date.now()}`,
-                author: "Helios PM",
-                avatar: "PM",
-                content: `🎉 Project is ready! ${(payload.githubUrl as string) ?? "Check the Workstation for generated code."}`,
-                timestamp: new Date(),
-                isUser: false,
-              },
-            ],
-          }));
-          break;
-        }
-
-        /* Status update from a wrapper */
-        case "STATUS_UPDATE": {
-          const wrapperId = env.src;
-          if (wrapperId) {
-            set((state) => {
-              const existing = state.wrappers[wrapperId];
-              if (!existing) return {};
-              return {
-                wrappers: {
-                  ...state.wrappers,
-                  [wrapperId]: {
-                    ...existing,
-                    status: (payload.status as WrapperStatus) ?? existing.status,
-                    lastSeen: Date.now(),
-                  },
-                },
-              };
-            });
-          }
-          break;
-        }
-
-        /* Legacy specialist outputs — treat as agent messages */
-        case "DESIGN_DRAFT":
-        case "API_DRAFT":
-        case "SCHEMA_DRAFT":
-        case "AUDIT_REPORT":
-        case "POLICY_RESULT": {
-          set((state) => ({
-            agentMessages: [
-              ...state.agentMessages,
-              {
-                id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                author: env.src ?? "Specialist",
-                avatar: (env.src ?? "SP").slice(0, 2).toUpperCase(),
-                content: (payload.summary as string) ?? (payload.text as string) ?? JSON.stringify(payload).slice(0, 300),
-                timestamp: new Date(),
-                isUser: false,
-              },
-            ],
-          }));
-          break;
-        }
-
-        default:
-          console.log("[orchestrator] unhandled EVENT kind:", kind, payload);
-      }
-      break;
-    }
-
-    /* ---- Catch-all for other envelope types (CHAT_RESPONSE at top level etc.) ---- */
-    default: {
-      // Some messages may arrive at top-level (not wrapped in EVENT)
-      if (env.type === "CHAT_RESPONSE") {
-        set((state) => ({
-          chatMessages: [
-            ...state.chatMessages,
-            {
-              id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              author: (payload.author as string) ?? "Helios PM",
-              avatar: "PM",
-              content: (payload.text as string) ?? (payload.message as string) ?? "",
-              timestamp: new Date(),
-              isUser: false,
-            },
-          ],
-        }));
-      } else if (env.type === "AGENT_MESSAGE") {
-        set((state) => ({
-          agentMessages: [
-            ...state.agentMessages,
-            {
-              id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              author: (payload.author as string) ?? env.src ?? "Agent",
-              avatar: ((payload.author as string) ?? env.src ?? "AG").slice(0, 2).toUpperCase(),
-              content: (payload.text as string) ?? (payload.message as string) ?? "",
-              timestamp: new Date(),
-              isUser: false,
-            },
-          ],
-        }));
-      } else {
-        console.log("[orchestrator] unhandled envelope:", env.type, env);
-      }
-    }
+function cleanup(websocket: WebSocket | null = _ws) {
+  if (websocket && _ws !== websocket) return;
+  if (!websocket || _ws === websocket) {
+    _ws = null;
   }
 }

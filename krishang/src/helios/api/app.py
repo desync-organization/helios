@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,8 +22,21 @@ def create_app(
 ) -> FastAPI:
     if site_generator is not None and site_client is not None:
         raise ValueError("provide either site_generator or site_client, not both")
-    generator = site_generator or StaticSiteGenerator(site_client or OllamaClient.from_environment())
-    app = FastAPI(title="Helios Runtime", version="1.0")
+    owns_generator = site_generator is None and site_client is None
+    generator = site_generator or StaticSiteGenerator(
+        site_client or OllamaClient.from_environment()
+    )
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            close = getattr(generator, "aclose", None)
+            if owns_generator and close is not None:
+                await close()
+
+    app = FastAPI(title="Helios Runtime", version="1.0", lifespan=lifespan)
     app.state.site_generator = generator
     guard = mutation_guard(runtime.settings.helios_local_api_token)
     app.add_middleware(
@@ -34,7 +50,9 @@ def create_app(
     app.include_router(models_router(runtime))
     app.include_router(roles_router(runtime))
     app.include_router(evals_router(guard))
-    app.include_router(site_router(generator))
+    app.include_router(
+        site_router(generator, allowed_origin=runtime.settings.helios_allowed_origin)
+    )
 
     @app.post("/control/pause", dependencies=[Depends(guard)])
     async def pause() -> dict:

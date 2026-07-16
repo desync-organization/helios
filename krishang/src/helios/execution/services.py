@@ -2,8 +2,10 @@ import asyncio
 import fnmatch
 import hashlib
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 import tomllib
 from pathlib import Path, PurePosixPath
@@ -220,17 +222,68 @@ class ExecutionServices:
             "networkUsed": source_kind == "allowlisted-public-github",
         }
 
+    def _git_file_names(self) -> list[str]:
+        git = shutil.which("git")
+        if not git:
+            raise FileNotFoundError("git is required to inspect a Git checkout")
+        environment = os.environ.copy()
+        environment.update({
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_TERMINAL_PROMPT": "0",
+        })
+        try:
+            result = subprocess.run(
+                [
+                    git,
+                    "ls-files",
+                    "-z",
+                    "--cached",
+                    "--others",
+                    "--exclude-standard",
+                    "--deduplicate",
+                ],
+                cwd=self.checkout,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=max(1.0, min(60.0, self.task.consent.max_runtime_s)),
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Git file enumeration timed out") from exc
+        if result.returncode:
+            raise RuntimeError("Git could not enumerate repository files")
+        return [
+            os.fsdecode(value)
+            for value in result.stdout.split(b"\0")
+            if value
+        ]
+
     def _iter_files(self) -> list[Path]:
-        paths: list[Path] = []
-        for path in self.checkout.rglob("*"):
-            if not path.is_file() or path.is_symlink():
-                continue
-            relative = path.relative_to(self.checkout).as_posix()
-            try:
-                self.scope.permits(relative)
-            except ExecutionPolicyError:
-                continue
-            paths.append(path)
+        if (self.checkout / ".git").exists():
+            paths: list[Path] = []
+            for relative in self._git_file_names():
+                try:
+                    normalized = self.scope.permits(relative)
+                except ExecutionPolicyError:
+                    continue
+                path = self.checkout.joinpath(*PurePosixPath(normalized).parts)
+                if path.is_file() and not path.is_symlink():
+                    paths.append(path)
+        else:
+            paths = []
+            for path in self.checkout.rglob("*"):
+                if not path.is_file() or path.is_symlink():
+                    continue
+                relative = path.relative_to(self.checkout).as_posix()
+                try:
+                    self.scope.permits(relative)
+                except ExecutionPolicyError:
+                    continue
+                paths.append(path)
         return sorted(paths, key=lambda item: item.relative_to(self.checkout).as_posix())
 
     @staticmethod
@@ -241,8 +294,9 @@ class ExecutionServices:
                 digest.update(chunk)
         return digest.hexdigest()
 
-    async def repository_evidence(self) -> dict[str, Any]:
-        materialization = await self.materialize_repository()
+    def _collect_repository_evidence(
+        self,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, str]], bool]:
         files: list[dict[str, Any]] = []
         excerpts: list[dict[str, str]] = []
         excerpt_budget = 48_000
@@ -262,13 +316,20 @@ class ExecutionServices:
             excerpt_budget -= len(content)
             if len(excerpts) >= 12:
                 break
+        return files, excerpts, len(all_files) > len(files)
+
+    async def repository_evidence(self) -> dict[str, Any]:
+        materialization = await self.materialize_repository()
+        files, excerpts, truncated = await asyncio.to_thread(
+            self._collect_repository_evidence
+        )
         return {
             **materialization,
             "allowedPaths": list(self.scope.allowed),
             "excludedPaths": list(self.scope.excluded),
             "files": files,
             "excerpts": excerpts,
-            "truncated": len(all_files) > len(files),
+            "truncated": truncated,
         }
 
     def validate_files(self, files: Any) -> list[dict[str, Any]]:

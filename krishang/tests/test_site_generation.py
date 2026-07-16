@@ -6,6 +6,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from starlette.websockets import WebSocketDisconnect
 
 from helios.api import create_app
 from helios.config import Settings
@@ -82,6 +83,8 @@ async def test_ollama_client_posts_bounded_structured_request() -> None:
     captured: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "llama3.2:latest"}]})
         captured["url"] = str(request.url)
         captured["body"] = json.loads(request.content)
         return httpx.Response(200, json={"model": "llama3.2:latest", "done": True, "response": json.dumps(SPEC)})
@@ -92,6 +95,8 @@ async def test_ollama_client_posts_bounded_structured_request() -> None:
         transport=httpx.MockTransport(handler),
     )
     result = await client.generate(prompt="Build a community studio site", json_schema=SiteSpec.model_json_schema())
+    readiness = await client.readiness()
+    await client.aclose()
 
     assert result == SPEC
     assert captured["url"] == "http://127.0.0.1:11434/api/generate"
@@ -99,6 +104,8 @@ async def test_ollama_client_posts_bounded_structured_request() -> None:
     assert captured["body"]["stream"] is False
     assert captured["body"]["format"]["additionalProperties"] is False
     assert captured["body"]["options"]["num_predict"] == 640
+    assert readiness.ready is True
+    assert readiness.error is None
 
 
 async def test_generator_compiles_prompt_specific_accessible_site() -> None:
@@ -128,6 +135,7 @@ async def test_generator_repairs_one_invalid_model_specification() -> None:
 
     assert result.files[0].path == "index.html"
     assert len(client.calls) == 2
+    assert client.calls[0]["json_schema"] is client.calls[1]["json_schema"]
     assert "single allowed schema-repair attempt" in client.calls[1]["prompt"]
     assert "tagline" in client.calls[1]["prompt"]
 
@@ -156,6 +164,12 @@ def test_rest_and_websocket_generation_use_injected_local_client(tmp_path) -> No
     assert payload["model"] == "llama3.2:test"
     assert [file["path"] for file in payload["files"]] == ["index.html", "styles.css", "app.js"]
     assert test_client.get("/health/live").json() == {"live": True}
+    assert test_client.get("/health/site").json() == {
+        "ready": True,
+        "model": "llama3.2:test",
+        "provider": "injected",
+        "error": None,
+    }
     assert test_client.post("/generate/site", json={"prompt": "", "extra": True}).status_code == 422
 
     with test_client.websocket_connect("/ws") as websocket:
@@ -173,3 +187,11 @@ def test_rest_and_websocket_generation_use_injected_local_client(tmp_path) -> No
     with test_client.websocket_connect("/ws") as websocket:
         websocket.send_json({"type": "unknown", "data": "ignored"})
         assert websocket.receive_json()["type"] == "error"
+
+    with pytest.raises(WebSocketDisconnect) as rejected:
+        with test_client.websocket_connect(
+            "/ws",
+            headers={"origin": "https://untrusted.example"},
+        ):
+            pass
+    assert rejected.value.code == 1008

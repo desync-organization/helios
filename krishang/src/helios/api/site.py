@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from helios.site_generation import (
     SiteGenerationError,
+    SiteGenerationReadiness,
     SiteGenerator,
     SitePromptRequest,
     StaticSiteResult,
@@ -18,8 +19,12 @@ class WebSocketPrompt(BaseModel):
     data: str = Field(min_length=1, max_length=8_000)
 
 
-def router(generator: SiteGenerator) -> APIRouter:
+def router(generator: SiteGenerator, *, allowed_origin: str) -> APIRouter:
     result = APIRouter()
+
+    @result.get("/health/site", response_model=SiteGenerationReadiness)
+    async def site_readiness() -> SiteGenerationReadiness:
+        return await generator.readiness()
 
     @result.post("/generate/site", response_model=StaticSiteResult)
     async def generate_site(request: SitePromptRequest) -> StaticSiteResult:
@@ -32,6 +37,10 @@ def router(generator: SiteGenerator) -> APIRouter:
 
     @result.websocket("/ws")
     async def generate_site_websocket(websocket: WebSocket) -> None:
+        origin = websocket.headers.get("origin")
+        if origin and origin.rstrip("/") != allowed_origin.rstrip("/"):
+            await websocket.close(code=1008, reason="WebSocket origin is not allowed")
+            return
         await websocket.accept()
         while True:
             try:

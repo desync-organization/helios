@@ -6,11 +6,13 @@
     "Member 2"
   ],
   "scripts": {
-    "dev": "next dev",
+    "dev": "bun scripts/dev.ts",
+    "dev:web": "next dev",
     "build": "bun scripts/build-next.mjs",
     "start": "next start",
     "lint": "eslint",
-    "dev:services": "bun --env-file=.env run --cwd \"Member 2\" dev:services",
+    "dev:services": "bun run dev:control-plane",
+    "dev:control-plane": "bun --env-file=.env run --cwd \"Member 2\" dev:services",
     "test": "bun run --cwd \"Member 2\" test",
     "test:contracts": "bun run --cwd \"Member 2\" test:contracts",
     "test:integration": "bun run --cwd \"Member 2\" test:integration",
