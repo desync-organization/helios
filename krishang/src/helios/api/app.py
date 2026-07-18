@@ -4,7 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from helios.site_generation import OllamaClient, SiteGenerator, SiteModelClient, StaticSiteGenerator
+from helios.site_generation import SiteGenerator, SiteModelClient, StaticSiteGenerator
+from helios.site_orchestration import OrchestratedSiteGenerator
 
 from .auth import mutation_guard
 from .evals import router as evals_router
@@ -23,9 +24,14 @@ def create_app(
     if site_generator is not None and site_client is not None:
         raise ValueError("provide either site_generator or site_client, not both")
     owns_generator = site_generator is None and site_client is None
-    generator = site_generator or StaticSiteGenerator(
-        site_client or OllamaClient.from_environment()
-    )
+    if site_generator is not None:
+        generator = site_generator
+    elif site_client is not None:
+        # Explicit single-client injection remains available for legacy tests and
+        # embedders. The default application path always uses the head + 3 SLMs.
+        generator = StaticSiteGenerator(site_client)
+    else:
+        generator = OrchestratedSiteGenerator.from_environment()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:

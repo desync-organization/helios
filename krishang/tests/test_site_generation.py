@@ -14,7 +14,9 @@ from helios.control_plane import InMemoryControlPlane
 from helios.runtime import HeliosRuntime
 from helios.site_generation import (
     OllamaClient,
+    SiteAgentMessage,
     SiteFile,
+    SiteGenerationProgress,
     SitePromptRequest,
     SiteSpec,
     StaticSiteGenerator,
@@ -69,6 +71,32 @@ class RepairingSiteClient(FakeSiteClient):
         return self.responses[len(self.calls) - 1]
 
 
+def _agent_message(
+    sequence: int = 1,
+    *,
+    message_id: str | None = None,
+    sender: str = "html-slm",
+    recipient: str = "css-slm",
+    tag: str = "@css",
+    delivery: str = "direct",
+    body: str = "Use the semantic regions and class hooks from the HTML file.",
+) -> SiteAgentMessage:
+    return SiteAgentMessage(
+        schemaVersion="1.0",
+        messageId=message_id or f"site-msg-{sequence:04d}",
+        sequence=sequence,
+        sender=sender,
+        recipient=recipient,
+        tag=tag,
+        kind="handoff",
+        phase="html",
+        delivery=delivery,
+        body=body,
+        model="helios-html-slm:test",
+        modelDigest="a" * 64,
+    )
+
+
 def _runtime(tmp_path) -> HeliosRuntime:
     settings = Settings(
         environment="test",
@@ -102,6 +130,7 @@ async def test_ollama_client_posts_bounded_structured_request() -> None:
     assert captured["url"] == "http://127.0.0.1:11434/api/generate"
     assert captured["body"]["model"] == "llama3.2:latest"
     assert captured["body"]["stream"] is False
+    assert captured["body"]["keep_alive"] == 0
     assert captured["body"]["format"]["additionalProperties"] is False
     assert captured["body"]["options"]["num_predict"] == 640
     assert readiness.ready is True
@@ -127,6 +156,29 @@ async def test_generator_compiles_prompt_specific_accessible_site() -> None:
     assert prompt in client.calls[0]["prompt"]
 
 
+async def test_generator_reports_the_real_execution_stages() -> None:
+    client = FakeSiteClient()
+    generator = StaticSiteGenerator(client)
+    updates: list[SiteGenerationProgress] = []
+
+    async def capture(update: SiteGenerationProgress) -> None:
+        updates.append(update)
+
+    await generator.generate(
+        SitePromptRequest(prompt="Build a community studio."),
+        on_progress=capture,
+    )
+
+    assert [(update.stage, update.status) for update in updates] == [
+        ("interpret", "running"),
+        ("interpret", "completed"),
+        ("compile", "running"),
+        ("compile", "completed"),
+        ("validate", "running"),
+        ("validate", "completed"),
+    ]
+
+
 async def test_generator_repairs_one_invalid_model_specification() -> None:
     client = RepairingSiteClient()
     generator = StaticSiteGenerator(client)
@@ -138,6 +190,92 @@ async def test_generator_repairs_one_invalid_model_specification() -> None:
     assert client.calls[0]["json_schema"] is client.calls[1]["json_schema"]
     assert "single allowed schema-repair attempt" in client.calls[1]["prompt"]
     assert "tagline" in client.calls[1]["prompt"]
+
+
+def test_site_agent_message_validates_canonical_route_and_aliases() -> None:
+    message = _agent_message()
+
+    assert message.recipient == "css-slm"
+    assert message.tag == "@css"
+    assert message.model_dump(mode="json", by_alias=True) == {
+        "schemaVersion": "1.0",
+        "messageId": "site-msg-0001",
+        "sequence": 1,
+        "sender": "html-slm",
+        "recipient": "css-slm",
+        "tag": "@css",
+        "kind": "handoff",
+        "phase": "html",
+        "delivery": "direct",
+        "body": "Use the semantic regions and class hooks from the HTML file.",
+        "model": "helios-html-slm:test",
+        "modelDigest": "a" * 64,
+    }
+
+    with pytest.raises(ValidationError, match="tag does not match"):
+        _agent_message(recipient="javascript-slm", tag="@css")
+    with pytest.raises(ValidationError, match="cannot be sent to the sender"):
+        _agent_message(sender="css-slm", recipient="css-slm", tag="@css")
+    with pytest.raises(ValidationError, match="delivery does not match"):
+        _agent_message(
+            recipient="head",
+            tag="@head",
+            delivery="direct",
+        )
+    with pytest.raises(ValidationError, match="plain-language notes"):
+        _agent_message(body="Replace the stylesheet with .button { color: red; }")
+
+
+async def test_legacy_generator_accepts_message_reporter_and_defaults_empty_transcript() -> None:
+    captured: list[SiteAgentMessage] = []
+
+    async def capture(message: SiteAgentMessage) -> None:
+        captured.append(message)
+
+    result = await StaticSiteGenerator(FakeSiteClient()).generate(
+        SitePromptRequest(prompt="Build a community studio."),
+        on_message=capture,
+    )
+
+    assert captured == []
+    assert result.agent_messages == []
+    assert result.model_dump(mode="json", by_alias=True)["agentMessages"] == []
+
+
+async def test_site_result_requires_contiguous_message_sequence_and_matching_ids() -> None:
+    generated = await StaticSiteGenerator(FakeSiteClient()).generate(
+        SitePromptRequest(prompt="Build a community studio."),
+    )
+    first = _agent_message()
+    second = _agent_message(
+        2,
+        sender="css-slm",
+        recipient="javascript-slm",
+        tag="@javascript",
+    )
+
+    valid = StaticSiteResult(
+        model=generated.model,
+        prompt_hash=generated.prompt_hash,
+        files=generated.files,
+        agent_messages=[first, second],
+    )
+    assert [message.sequence for message in valid.agent_messages] == [1, 2]
+
+    with pytest.raises(ValidationError, match="contiguous and ordered"):
+        StaticSiteResult(
+            model=generated.model,
+            prompt_hash=generated.prompt_hash,
+            files=generated.files,
+            agent_messages=[second],
+        )
+    with pytest.raises(ValidationError, match="ID must match"):
+        StaticSiteResult(
+            model=generated.model,
+            prompt_hash=generated.prompt_hash,
+            files=generated.files,
+            agent_messages=[_agent_message(message_id="site-msg-0002")],
+        )
 
 
 def test_site_result_rejects_missing_or_unsafe_artifacts() -> None:
@@ -169,20 +307,9 @@ def test_rest_and_websocket_generation_use_injected_local_client(tmp_path) -> No
         "model": "llama3.2:test",
         "provider": "injected",
         "error": None,
+        "roles": [],
     }
     assert test_client.post("/generate/site", json={"prompt": "", "extra": True}).status_code == 422
-
-    with test_client.websocket_connect("/ws") as websocket:
-        websocket.send_json({"type": "prompt", "data": "Build a community studio."})
-        messages = [websocket.receive_json() for _ in range(6)]
-
-    assert [message["type"] for message in messages] == [
-        "progress", "progress", "artifact", "artifact", "artifact", "complete",
-    ]
-    artifacts = [message for message in messages if message["type"] == "artifact"]
-    assert [message["filename"] for message in artifacts] == ["index.html", "styles.css", "app.js"]
-    assert all(message["code"] and message["data"]["code"] == message["code"] for message in artifacts)
-    assert messages[-1]["files"] == ["index.html", "styles.css", "app.js"]
 
     with test_client.websocket_connect("/ws") as websocket:
         websocket.send_json({"type": "unknown", "data": "ignored"})

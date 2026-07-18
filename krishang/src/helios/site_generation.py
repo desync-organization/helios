@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import re
+from collections.abc import Awaitable, Callable
 from html import escape
 from html.parser import HTMLParser
 from typing import Any, Literal, Protocol
@@ -14,7 +15,17 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 SITE_PATHS = ("index.html", "styles.css", "app.js")
 DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434"
 DEFAULT_OLLAMA_MODEL = "llama3.2:latest"
-DEFAULT_OLLAMA_TIMEOUT_S = 120.0
+DEFAULT_OLLAMA_TIMEOUT_S = 360.0
+
+SiteAgentRole = Literal["head", "html-slm", "css-slm", "javascript-slm"]
+SiteAgentTag = Literal["@head", "@html", "@css", "@javascript"]
+
+_SITE_AGENT_TAG_ROLES: dict[SiteAgentTag, SiteAgentRole] = {
+    "@head": "head",
+    "@html": "html-slm",
+    "@css": "css-slm",
+    "@javascript": "javascript-slm",
+}
 
 
 class SiteGenerationError(RuntimeError):
@@ -34,11 +45,160 @@ class SitePromptRequest(BaseModel):
         return value
 
 
+class SiteFileProvenance(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        populate_by_name=True,
+    )
+
+    role: Literal["html-slm", "css-slm", "javascript-slm"]
+    model: str = Field(min_length=1, max_length=128)
+    model_digest: str | None = Field(
+        default=None,
+        alias="modelDigest",
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    server_identity: str = Field(alias="serverIdentity", min_length=1, max_length=192)
+    base_model_id: str = Field(alias="baseModelId", min_length=1, max_length=128)
+    specialization_id: str = Field(alias="specializationId", min_length=1, max_length=128)
+    specialization_version: str = Field(
+        alias="specializationVersion",
+        min_length=1,
+        max_length=64,
+    )
+    specialization_sha256: str = Field(
+        alias="specializationSha256",
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    adapter_id: str | None = Field(default=None, alias="adapterId", max_length=128)
+    adapter_version: str | None = Field(
+        default=None,
+        alias="adapterVersion",
+        max_length=64,
+    )
+    adapter_sha256: str | None = Field(
+        default=None,
+        alias="adapterSha256",
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    prompt_hash: str = Field(alias="promptHash", pattern=r"^[a-f0-9]{64}$")
+    plan_hash: str = Field(alias="planHash", pattern=r"^[a-f0-9]{64}$")
+    content_sha256: str = Field(alias="contentSha256", pattern=r"^[a-f0-9]{64}$")
+    prompt_tokens: int = Field(alias="promptTokens", ge=0, le=100_000)
+    completion_tokens: int = Field(alias="completionTokens", ge=0, le=50_000)
+    latency_ms: int = Field(alias="latencyMs", ge=0, le=600_000)
+    attempt: int = Field(ge=1, le=3)
+    revision: int = Field(default=0, ge=0, le=1)
+
+
 class SiteFile(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     path: Literal["index.html", "styles.css", "app.js"]
     content: str = Field(min_length=1, max_length=500_000)
+    provenance: SiteFileProvenance | None = None
+
+    @model_validator(mode="after")
+    def validate_provenance(self) -> "SiteFile":
+        if self.provenance is None:
+            return self
+        expected_roles = {
+            "index.html": "html-slm",
+            "styles.css": "css-slm",
+            "app.js": "javascript-slm",
+        }
+        if self.provenance.role != expected_roles[self.path]:
+            raise ValueError("site file provenance role does not own this path")
+        content_hash = hashlib.sha256(self.content.encode("utf-8")).hexdigest()
+        if self.provenance.content_sha256 != content_hash:
+            raise ValueError("site file provenance does not match the file content")
+        return self
+
+
+class SiteModelInvocation(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        populate_by_name=True,
+    )
+
+    role: Literal["head", "html-slm", "css-slm", "javascript-slm"]
+    phase: Literal["plan", "generate", "repair", "review", "revise"]
+    model: str = Field(min_length=1, max_length=128)
+    model_digest: str | None = Field(
+        default=None,
+        alias="modelDigest",
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    prompt_hash: str = Field(alias="promptHash", pattern=r"^[a-f0-9]{64}$")
+    latency_ms: int = Field(alias="latencyMs", ge=0, le=600_000)
+    prompt_tokens: int | None = Field(default=None, alias="promptTokens", ge=0, le=100_000)
+    completion_tokens: int | None = Field(default=None, alias="completionTokens", ge=0, le=50_000)
+
+
+class SiteHeadReview(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        populate_by_name=True,
+    )
+
+    model: str = Field(min_length=1, max_length=128)
+    model_digest: str | None = Field(
+        default=None,
+        alias="modelDigest",
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    approved: bool
+    rounds: int = Field(ge=1, le=2)
+    summary: str = Field(min_length=1, max_length=500)
+
+
+class SiteAgentMessage(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        str_strip_whitespace=True,
+        populate_by_name=True,
+    )
+
+    schema_version: Literal["1.0"] = Field(default="1.0", alias="schemaVersion")
+    message_id: str = Field(alias="messageId", pattern=r"^site-msg-[0-9]{4}$")
+    sequence: int = Field(ge=1, le=16)
+    sender: SiteAgentRole
+    recipient: SiteAgentRole
+    tag: SiteAgentTag
+    kind: Literal["handoff", "question", "answer", "risk", "review"]
+    phase: Literal["plan", "html", "css", "javascript", "review", "revise"]
+    delivery: Literal["direct", "head-review"]
+    body: str = Field(min_length=1, max_length=360)
+    model: str = Field(min_length=1, max_length=128)
+    model_digest: str | None = Field(
+        default=None,
+        alias="modelDigest",
+        pattern=r"^[a-f0-9]{64}$",
+    )
+
+    @field_validator("body")
+    @classmethod
+    def validate_plain_language_body(cls, value: str) -> str:
+        if "```" in value or any(character in value for character in "{}<>"):
+            raise ValueError(
+                "site agent messages must be plain-language notes without code or markup"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_route(self) -> "SiteAgentMessage":
+        if self.sender == self.recipient:
+            raise ValueError("site agent messages cannot be sent to the sender")
+        if _SITE_AGENT_TAG_ROLES[self.tag] != self.recipient:
+            raise ValueError("site agent message tag does not match its recipient")
+        expected_delivery = "head-review" if self.recipient == "head" else "direct"
+        if self.delivery != expected_delivery:
+            raise ValueError("site agent message delivery does not match its recipient")
+        return self
 
 
 class StaticSiteResult(BaseModel):
@@ -51,6 +211,16 @@ class StaticSiteResult(BaseModel):
     model: str = Field(min_length=1, max_length=128)
     prompt_hash: str = Field(alias="promptHash", pattern=r"^[a-f0-9]{64}$")
     files: list[SiteFile] = Field(min_length=3, max_length=3)
+    head_review: SiteHeadReview | None = Field(default=None, alias="headReview")
+    model_invocations: list[SiteModelInvocation] = Field(
+        default_factory=list,
+        alias="modelInvocations",
+    )
+    agent_messages: list[SiteAgentMessage] = Field(
+        default_factory=list,
+        alias="agentMessages",
+        max_length=16,
+    )
 
     @model_validator(mode="after")
     def validate_complete_site(self) -> "StaticSiteResult":
@@ -63,7 +233,33 @@ class StaticSiteResult(BaseModel):
         _validate_html(by_path["index.html"].content)
         _validate_css(by_path["styles.css"].content)
         _validate_javascript(by_path["app.js"].content)
+        expected_sequences = list(range(1, len(self.agent_messages) + 1))
+        actual_sequences = [message.sequence for message in self.agent_messages]
+        if actual_sequences != expected_sequences:
+            raise ValueError("site agent message sequence must be contiguous and ordered")
+        for message in self.agent_messages:
+            expected_message_id = f"site-msg-{message.sequence:04d}"
+            if message.message_id != expected_message_id:
+                raise ValueError("site agent message ID must match its sequence")
         return self
+
+
+class SiteRoleReadiness(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        populate_by_name=True,
+    )
+
+    role: Literal["head", "html-slm", "css-slm", "javascript-slm"]
+    ready: bool
+    model: str = Field(min_length=1, max_length=128)
+    model_digest: str | None = Field(
+        default=None,
+        alias="modelDigest",
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    error: str | None = Field(default=None, max_length=256)
 
 
 class SiteGenerationReadiness(BaseModel):
@@ -73,6 +269,30 @@ class SiteGenerationReadiness(BaseModel):
     model: str = Field(min_length=1, max_length=128)
     provider: Literal["ollama", "injected"]
     error: str | None = Field(default=None, max_length=256)
+    roles: list[SiteRoleReadiness] = Field(default_factory=list, max_length=4)
+
+
+class SiteGenerationProgress(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    stage: Literal[
+        "interpret",
+        "compile",
+        "plan",
+        "html",
+        "css",
+        "javascript",
+        "integrate",
+        "review",
+        "revise",
+        "validate",
+    ]
+    status: Literal["running", "completed"]
+    detail: str = Field(min_length=1, max_length=160)
+
+
+SiteProgressReporter = Callable[[SiteGenerationProgress], Awaitable[None]]
+SiteMessageReporter = Callable[[SiteAgentMessage], Awaitable[None]]
 
 
 class PaletteSpec(BaseModel):
@@ -128,7 +348,13 @@ class SiteModelClient(Protocol):
 class SiteGenerator(Protocol):
     model: str
 
-    async def generate(self, request: SitePromptRequest) -> StaticSiteResult: ...
+    async def generate(
+        self,
+        request: SitePromptRequest,
+        *,
+        on_progress: SiteProgressReporter | None = None,
+        on_message: SiteMessageReporter | None = None,
+    ) -> StaticSiteResult: ...
 
     async def readiness(self) -> SiteGenerationReadiness: ...
 
@@ -142,6 +368,8 @@ class OllamaClient:
         *,
         model: str = DEFAULT_OLLAMA_MODEL,
         timeout: float = DEFAULT_OLLAMA_TIMEOUT_S,
+        num_predict: int = 640,
+        expected_digest: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
@@ -153,13 +381,24 @@ class OllamaClient:
             raise ValueError("Ollama endpoint contains unsupported URL components")
         if not re.fullmatch(r"[A-Za-z0-9_.:/-]{1,128}", model):
             raise ValueError("Ollama model name is invalid")
+        if expected_digest and not re.fullmatch(r"[a-f0-9]{64}", expected_digest):
+            raise ValueError("Ollama model digest must be a lowercase SHA-256 value")
         if not 1 <= timeout <= 600:
             raise ValueError("Ollama timeout must be between 1 and 600 seconds")
+        if not 64 <= num_predict <= 16_384:
+            raise ValueError("Ollama num_predict must be between 64 and 16384")
         if transport is not None and client is not None:
             raise ValueError("provide either an HTTP transport or client, not both")
         self.endpoint = endpoint
         self.model = model
+        self.expected_digest = expected_digest
+        self.model_digest: str | None = None
         self.timeout = timeout
+        self.num_predict = num_predict
+        self.last_usage: dict[str, int | None] = {
+            "prompt_tokens": None,
+            "completion_tokens": None,
+        }
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(timeout=timeout, transport=transport)
 
@@ -174,6 +413,7 @@ class OllamaClient:
             os.getenv("HELIOS_OLLAMA_URL", DEFAULT_OLLAMA_ENDPOINT),
             model=os.getenv("HELIOS_OLLAMA_SITE_MODEL", DEFAULT_OLLAMA_MODEL),
             timeout=timeout,
+            expected_digest=os.getenv("HELIOS_OLLAMA_SITE_DIGEST") or None,
         )
 
     async def generate(self, *, prompt: str, json_schema: dict[str, Any]) -> dict[str, Any]:
@@ -182,7 +422,11 @@ class OllamaClient:
             "prompt": prompt,
             "stream": False,
             "format": json_schema,
-            "options": {"temperature": 0, "num_predict": 640},
+            # The standalone pipeline alternates between one head and three
+            # specialists. Unload after each bounded call so two model families
+            # never compete for the same constrained local memory budget.
+            "keep_alive": 0,
+            "options": {"temperature": 0, "num_predict": self.num_predict},
         }
         try:
             response = await self._client.post(
@@ -211,6 +455,14 @@ class OllamaClient:
             or not isinstance(payload.get("response"), str)
         ):
             raise SiteGenerationError("Local Ollama returned an invalid response")
+        self.last_usage = {
+            "prompt_tokens": payload.get("prompt_eval_count")
+            if isinstance(payload.get("prompt_eval_count"), int)
+            else None,
+            "completion_tokens": payload.get("eval_count")
+            if isinstance(payload.get("eval_count"), int)
+            else None,
+        }
         if len(payload["response"].encode("utf-8")) > 128_000:
             raise SiteGenerationError("Local Ollama response exceeded the bounded output limit")
         try:
@@ -231,7 +483,7 @@ class OllamaClient:
             payload = response.json()
             models = payload.get("models") if isinstance(payload, dict) else None
             available = {
-                str(item.get("name") or item.get("model"))
+                str(item.get("name") or item.get("model")): item.get("digest")
                 for item in models or []
                 if isinstance(item, dict) and (item.get("name") or item.get("model"))
             }
@@ -241,6 +493,18 @@ class OllamaClient:
                     model=self.model,
                     provider="ollama",
                     error="configured model is not installed",
+                )
+            digest = available[self.model]
+            self.model_digest = digest if isinstance(digest, str) and re.fullmatch(
+                r"[a-f0-9]{64}",
+                digest,
+            ) else None
+            if self.expected_digest and self.model_digest != self.expected_digest:
+                return SiteGenerationReadiness(
+                    ready=False,
+                    model=self.model,
+                    provider="ollama",
+                    error="configured model digest does not match",
                 )
             return SiteGenerationReadiness(
                 ready=True,
@@ -265,15 +529,40 @@ class StaticSiteGenerator:
         self.client = client
         self.model = client.model
 
-    async def generate(self, request: SitePromptRequest) -> StaticSiteResult:
+    async def generate(
+        self,
+        request: SitePromptRequest,
+        *,
+        on_progress: SiteProgressReporter | None = None,
+        on_message: SiteMessageReporter | None = None,
+    ) -> StaticSiteResult:
+        async def report(
+            stage: Literal["interpret", "compile", "validate"],
+            status: Literal["running", "completed"],
+            detail: str,
+        ) -> None:
+            if on_progress is not None:
+                await on_progress(SiteGenerationProgress(
+                    stage=stage,
+                    status=status,
+                    detail=detail,
+                ))
+
+        await report(
+            "interpret",
+            "running",
+            f"Generating a structured site specification with {self.model}.",
+        )
         prompt = _site_spec_prompt(request.prompt)
         raw_spec = await self.client.generate(
             prompt=prompt,
             json_schema=_SITE_SPEC_JSON_SCHEMA,
         )
+        repaired_spec = False
         try:
             spec = SiteSpec.model_validate(raw_spec)
         except ValidationError as first_error:
+            repaired_spec = True
             repaired = await self.client.generate(
                 prompt=_site_spec_repair_prompt(request.prompt, raw_spec, first_error),
                 json_schema=_SITE_SPEC_JSON_SCHEMA,
@@ -284,12 +573,25 @@ class StaticSiteGenerator:
                 raise SiteGenerationError(
                     "Local Ollama returned an invalid site specification after one repair attempt"
                 ) from repair_error
+
+        await report(
+            "interpret",
+            "completed",
+            "Specification repaired and validated."
+            if repaired_spec
+            else "Specification validated.",
+        )
+        await report("compile", "running", "Compiling the specification into three static files.")
         files = _compile_site(spec)
-        return StaticSiteResult(
+        await report("compile", "completed", "HTML, CSS, and JavaScript compiled.")
+        await report("validate", "running", "Running bounded output and accessibility checks.")
+        result = StaticSiteResult(
             model=self.model,
             prompt_hash=hashlib.sha256(request.prompt.encode("utf-8")).hexdigest(),
             files=files,
         )
+        await report("validate", "completed", "All generated files passed validation.")
+        return result
 
     async def readiness(self) -> SiteGenerationReadiness:
         readiness = getattr(self.client, "readiness", None)

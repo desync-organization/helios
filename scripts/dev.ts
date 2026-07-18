@@ -15,7 +15,29 @@ const nextCli = resolve(root, "node_modules", "next", "dist", "bin", "next");
 const ollamaUrl = validateLocalUrl(
     process.env.HELIOS_OLLAMA_URL ?? "http://127.0.0.1:11434",
 );
-const siteModel = process.env.HELIOS_OLLAMA_SITE_MODEL ?? "llama3.2:latest";
+const siteModel = validateModelName(
+    process.env.HELIOS_OLLAMA_SITE_MODEL ?? "llama3.2:latest",
+);
+const slmBaseModel = validateModelName(
+    process.env.HELIOS_OLLAMA_SLM_BASE_MODEL ?? "gemma3:4b",
+);
+const defaultSpecialistModels = {
+    "html-slm": "helios-html-slm:latest",
+    "css-slm": "helios-css-slm:latest",
+    "javascript-slm": "helios-javascript-slm:latest",
+} as const;
+const specialistModels = {
+    "html-slm": validateModelName(
+        process.env.HELIOS_OLLAMA_HTML_SLM_MODEL ?? defaultSpecialistModels["html-slm"],
+    ),
+    "css-slm": validateModelName(
+        process.env.HELIOS_OLLAMA_CSS_SLM_MODEL ?? defaultSpecialistModels["css-slm"],
+    ),
+    "javascript-slm": validateModelName(
+        process.env.HELIOS_OLLAMA_JAVASCRIPT_SLM_MODEL
+            ?? defaultSpecialistModels["javascript-slm"],
+    ),
+} as const;
 const expectedModelDigest = process.env.HELIOS_OLLAMA_SITE_DIGEST?.trim() || null;
 const autoPullModel = parseBoolean(process.env.HELIOS_OLLAMA_AUTO_PULL, true);
 const preferredRuntimePort = parsePort(process.env.HELIOS_API_PORT, 8788);
@@ -31,6 +53,11 @@ interface ManagedService {
 interface OllamaModel {
     name: string;
     digest: string;
+}
+
+interface OllamaStack {
+    head: OllamaModel;
+    specialists: OllamaModel[];
 }
 
 const services: ManagedService[] = [];
@@ -64,6 +91,13 @@ function validateLocalUrl(value: string): string {
         throw new Error("HELIOS_OLLAMA_URL must be an uncredentialed localhost HTTP URL");
     }
     return url.toString().replace(/\/$/, "");
+}
+
+function validateModelName(value: string): string {
+    if (!/^[A-Za-z0-9_.:/-]{1,128}$/.test(value)) {
+        throw new Error(`invalid Ollama model name: ${value}`);
+    }
+    return value;
 }
 
 function systemEnvironment(): Record<string, string> {
@@ -269,7 +303,7 @@ async function waitFor<T>(
     throw new Error(`${label} did not become ready within ${Math.ceil(timeoutMs / 1000)} seconds`);
 }
 
-async function ensureOllama(): Promise<OllamaModel> {
+async function ensureOllama(): Promise<OllamaStack> {
     let models = await ollamaModels();
     if (models === null) {
         const ollama = Bun.which("ollama");
@@ -295,27 +329,78 @@ async function ensureOllama(): Promise<OllamaModel> {
         models = await waitFor("Ollama", ollamaModels, 30_000);
     }
 
-    let installed = models.find((model) => model.name === siteModel);
-    if (!installed) {
+    const ollama = Bun.which("ollama");
+    if (!ollama) throw new Error("Ollama CLI is required to provision local models");
+
+    async function ensureInstalled(modelName: string): Promise<OllamaModel> {
+        let installed = models!.find((model) => model.name === modelName);
+        if (installed) return installed;
         if (!autoPullModel) {
             throw new Error(
-                `Ollama model ${siteModel} is missing and HELIOS_OLLAMA_AUTO_PULL is disabled`,
+                `Ollama model ${modelName} is missing and HELIOS_OLLAMA_AUTO_PULL is disabled`,
             );
         }
-        const ollama = Bun.which("ollama");
-        if (!ollama) throw new Error(`Ollama model ${siteModel} is not installed`);
-        console.log(`ollama: pulling ${siteModel}`);
-        await runCommand([ollama, "pull", siteModel], { cwd: root });
+        console.log(`ollama: pulling ${modelName}`);
+        await runCommand([ollama!, "pull", modelName], { cwd: root });
         models = await waitFor("Ollama model inventory", ollamaModels, 10_000);
-        installed = models.find((model) => model.name === siteModel);
+        installed = models.find((model) => model.name === modelName);
+        if (!installed) throw new Error(`Ollama did not expose model ${modelName} after pull`);
+        return installed;
     }
-    if (!installed) throw new Error(`Ollama did not expose model ${siteModel} after pull`);
-    if (expectedModelDigest && installed.digest !== expectedModelDigest) {
+
+    const head = await ensureInstalled(siteModel);
+    if (expectedModelDigest && head.digest !== expectedModelDigest) {
         throw new Error(
             `Ollama model digest mismatch for ${siteModel}; expected ${expectedModelDigest}`,
         );
     }
-    return installed;
+
+    const roles = Object.keys(specialistModels) as Array<keyof typeof specialistModels>;
+    const bundledRoles = roles.filter(
+        (role) => specialistModels[role] === defaultSpecialistModels[role],
+    );
+    if (bundledRoles.length !== 0 && bundledRoles.length !== roles.length) {
+        throw new Error(
+            "configure either all bundled site SLMs or three explicit custom specialist models",
+        );
+    }
+    if (bundledRoles.length === roles.length) {
+        if (slmBaseModel !== "gemma3:4b") {
+            throw new Error(
+                "bundled site SLM definitions require HELIOS_OLLAMA_SLM_BASE_MODEL=gemma3:4b",
+            );
+        }
+        await ensureInstalled(slmBaseModel);
+        for (const role of roles) {
+            const modelfile = resolve(runtimeRoot, "ollama", `${role}.Modelfile`);
+            if (!existsSync(modelfile)) {
+                throw new Error(`missing ${role} specialization: ${modelfile}`);
+            }
+            console.log(`ollama: provisioning ${specialistModels[role]} from ${slmBaseModel}`);
+            await runCommand([
+                ollama,
+                "create",
+                specialistModels[role],
+                "-f",
+                modelfile,
+            ], { cwd: runtimeRoot });
+        }
+        models = await waitFor("Ollama specialist model inventory", ollamaModels, 10_000);
+    } else {
+        for (const role of roles) await ensureInstalled(specialistModels[role]);
+    }
+
+    const specialists = roles.map((role) => {
+        const installed = models!.find((model) => model.name === specialistModels[role]);
+        if (!installed) {
+            throw new Error(`Ollama did not expose specialist model ${specialistModels[role]}`);
+        }
+        return installed;
+    });
+    if (new Set([head.name, ...specialists.map((model) => model.name)]).size !== 4) {
+        throw new Error("head, HTML, CSS, and JavaScript models require distinct identities");
+    }
+    return { head, specialists };
 }
 
 function runtimeEnvironment(runtimePort: number, webOrigin: string): Record<string, string> {
@@ -328,6 +413,7 @@ function runtimeEnvironment(runtimePort: number, webOrigin: string): Record<stri
             "HELIOS_FAST_LANE_TIMEOUT_S",
             "HELIOS_DEEP_LANE_TIMEOUT_S",
             "HELIOS_SECURITY_SCAN_TIMEOUT_S",
+            "HELIOS_OLLAMA_SITE_DIGEST",
             "HELIOS_OLLAMA_SITE_TIMEOUT_S",
         ]),
         ENVIRONMENT: "development",
@@ -343,6 +429,10 @@ function runtimeEnvironment(runtimePort: number, webOrigin: string): Record<stri
         HELIOS_ALLOWED_ORIGIN: webOrigin,
         HELIOS_OLLAMA_URL: ollamaUrl,
         HELIOS_OLLAMA_SITE_MODEL: siteModel,
+        HELIOS_OLLAMA_SLM_BASE_MODEL: slmBaseModel,
+        HELIOS_OLLAMA_HTML_SLM_MODEL: specialistModels["html-slm"],
+        HELIOS_OLLAMA_CSS_SLM_MODEL: specialistModels["css-slm"],
+        HELIOS_OLLAMA_JAVASCRIPT_SLM_MODEL: specialistModels["javascript-slm"],
     };
 }
 
@@ -351,11 +441,27 @@ async function waitForSiteRuntime(runtimePort: number): Promise<void> {
     await waitFor("Helios site runtime", async () => {
         try {
             const payload = await fetchJson(url);
+            const record = payload && typeof payload === "object"
+                ? payload as Record<string, unknown>
+                : null;
+            const roles = Array.isArray(record?.roles)
+                ? record.roles as Array<Record<string, unknown>>
+                : [];
+            const expectedRoles = new Map<string, string>([
+                ["head", siteModel],
+                ["html-slm", specialistModels["html-slm"]],
+                ["css-slm", specialistModels["css-slm"]],
+                ["javascript-slm", specialistModels["javascript-slm"]],
+            ]);
             if (
-                payload &&
-                typeof payload === "object" &&
-                (payload as Record<string, unknown>).ready === true &&
-                (payload as Record<string, unknown>).model === siteModel
+                record?.ready === true &&
+                record.model === siteModel &&
+                roles.length === expectedRoles.size &&
+                roles.every((role) => (
+                    role.ready === true &&
+                    typeof role.role === "string" &&
+                    role.model === expectedRoles.get(role.role)
+                ))
             ) {
                 return true;
             }
@@ -422,7 +528,7 @@ async function main(): Promise<void> {
     console.log("Helios: preparing standalone prompt-to-site development stack");
     await ensureFrontendDependencies();
     const python = await ensureRuntimeEnvironment();
-    const installedModel = await ensureOllama();
+    const installedModels = await ensureOllama();
     const runtimePort = await findAvailablePort(preferredRuntimePort);
     const webPort = await findAvailablePort(preferredWebPort);
     const webOrigin = `http://127.0.0.1:${webPort}`;
@@ -465,7 +571,10 @@ async function main(): Promise<void> {
     console.log("Helios is ready.");
     console.log(`  App:     ${webOrigin}`);
     console.log(`  Runtime: http://127.0.0.1:${runtimePort}`);
-    console.log(`  Model:   ${installedModel.name} (${installedModel.digest.slice(0, 12)})`);
+    console.log(`  Head:    ${installedModels.head.name} (${installedModels.head.digest.slice(0, 12)})`);
+    for (const specialist of installedModels.specialists) {
+        console.log(`  SLM:     ${specialist.name} (${specialist.digest.slice(0, 12)})`);
+    }
     console.log("  Stop:    Ctrl+C");
 
     const firstExit = await Promise.race(
